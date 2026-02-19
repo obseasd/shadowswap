@@ -16,7 +16,7 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { isConnected, isConnecting, connect, disconnect, shortAddress } = useWallet();
+  const { isConnected, isConnecting, connect, connectWallet, disconnect, shortAddress, walletName, showWalletModal, setShowWalletModal } = useWallet();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -65,7 +65,7 @@ export default function Navbar() {
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-hover text-sm font-medium transition-colors"
               >
                 <div className="w-2 h-2 rounded-full bg-success" />
-                {shortAddress}
+                {walletName ? `${walletName} · ${shortAddress}` : shortAddress}
               </button>
             ) : (
               <button
@@ -116,6 +116,59 @@ export default function Navbar() {
                 );
               })}
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Wallet chooser modal */}
+      <AnimatePresence>
+        {showWalletModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowWalletModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[360px] rounded-3xl bg-surface border border-border p-6"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-semibold">Connect Wallet</h3>
+                <button
+                  onClick={() => setShowWalletModal(false)}
+                  className="p-1.5 rounded-xl hover:bg-surface-2 transition-colors"
+                >
+                  <X className="w-5 h-5 text-text-secondary" />
+                </button>
+              </div>
+              <div className="space-y-2">
+                <button
+                  onClick={() => connectWallet("argentX")}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-surface-2 border border-border transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-[#ff875b]/15 flex items-center justify-center text-lg font-bold text-[#ff875b]">A</div>
+                  <div className="text-left">
+                    <div className="font-semibold">ArgentX</div>
+                    <div className="text-sm text-text-secondary">Starknet wallet</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => connectWallet("braavos")}
+                  className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-surface-2 border border-border transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-[#f5c451]/15 flex items-center justify-center text-lg font-bold text-[#f5c451]">B</div>
+                  <div className="text-left">
+                    <div className="font-semibold">Braavos</div>
+                    <div className="text-sm text-text-secondary">Starknet wallet</div>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

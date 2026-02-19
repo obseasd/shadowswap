@@ -10,9 +10,13 @@ interface WalletContextType {
   address: string | null;
   isConnected: boolean;
   isConnecting: boolean;
-  connect: () => Promise<void>;
+  connect: () => void;
+  connectWallet: (id: "argentX" | "braavos") => Promise<void>;
   disconnect: () => void;
   shortAddress: string;
+  walletName: string | null;
+  showWalletModal: boolean;
+  setShowWalletModal: (v: boolean) => void;
   // Tongo key management
   tongoPrivateKey: string | null;
   setTongoPrivateKey: (key: string) => void;
@@ -27,9 +31,13 @@ const WalletContext = createContext<WalletContextType>({
   address: null,
   isConnected: false,
   isConnecting: false,
-  connect: async () => {},
+  connect: () => {},
+  connectWallet: async () => {},
   disconnect: () => {},
   shortAddress: "",
+  walletName: null,
+  showWalletModal: false,
+  setShowWalletModal: () => {},
   tongoPrivateKey: null,
   setTongoPrivateKey: () => {},
   execute: async () => null,
@@ -49,6 +57,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [wallet, setWallet] = useState<StarknetWallet | null>(null);
+  const [walletName, setWalletName] = useState<string | null>(null);
+  const [showWalletModal, setShowWalletModal] = useState(false);
   const [tongoPrivateKey, setTongoPrivateKeyState] = useState<string | null>(null);
   const [balances, setBalances] = useState<Record<TokenSymbol, { balance: bigint; pending: bigint } | null>>({
     ETH: null,
@@ -65,12 +75,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(() => {
+    setShowWalletModal(true);
+  }, []);
+
+  const connectWallet = useCallback(async (id: "argentX" | "braavos") => {
     setIsConnecting(true);
+    setShowWalletModal(false);
     try {
-      const w = window.starknet_argentX || window.starknet_braavos || window.starknet;
+      const w = id === "argentX" ? window.starknet_argentX : window.starknet_braavos;
       if (!w) {
-        window.open("https://www.argent.xyz/argent-x/", "_blank");
+        const url = id === "argentX"
+          ? "https://www.argent.xyz/argent-x/"
+          : "https://braavos.app/";
+        window.open(url, "_blank");
         return;
       }
       await w.enable();
@@ -78,8 +96,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (addr) {
         setAddress(addr);
         setWallet(w);
+        setWalletName(id === "argentX" ? "ArgentX" : "Braavos");
       }
-      // Restore tongo key from session
       const savedKey = sessionStorage.getItem("tongo_pk");
       if (savedKey) setTongoPrivateKeyState(savedKey);
     } catch (err) {
@@ -135,8 +153,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         isConnected: !!address,
         isConnecting,
         connect,
+        connectWallet,
         disconnect,
         shortAddress,
+        walletName,
+        showWalletModal,
+        setShowWalletModal,
         tongoPrivateKey,
         setTongoPrivateKey,
         execute,
