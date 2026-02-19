@@ -14,7 +14,7 @@ import {
 export function StarknetProvider({ children }: { children: React.ReactNode }) {
   const { connectors } = useInjectedConnectors({
     recommended: [argent(), braavos()],
-    includeRecommended: "always",
+    includeRecommended: "onlyIfNoConnectors",
     order: "alphabetical",
   });
 

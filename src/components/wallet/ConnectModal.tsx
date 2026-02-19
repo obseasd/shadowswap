@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Connector, useConnect } from "@starknet-react/core";
 import { X } from "lucide-react";
@@ -15,6 +15,12 @@ export default function ConnectModal() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Only show wallets that are actually installed
+  const availableConnectors = useMemo(
+    () => connectors.filter((c) => c.available()),
+    [connectors]
+  );
 
   function handleConnectWallet(connector: Connector) {
     connect({ connector });
@@ -47,7 +53,7 @@ export default function ConnectModal() {
 
         {/* Wallet list */}
         <div className="flex flex-col gap-3">
-          {connectors.map((connector) => (
+          {availableConnectors.map((connector) => (
             <WalletOption
               key={connector.id}
               connector={connector}
