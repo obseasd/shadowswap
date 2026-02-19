@@ -1,7 +1,7 @@
 export const NETWORKS = {
   sepolia: {
     name: "Starknet Sepolia",
-    rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.public.blastapi.io/rpc/v0_7",
+    rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo",
     explorerUrl: "https://sepolia.starkscan.co",
     tokens: {
       ETH: {
