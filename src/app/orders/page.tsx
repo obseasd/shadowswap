@@ -2,19 +2,16 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, Lock, Plus, X, Eye, EyeOff, Loader2, ChevronDown, Info } from "lucide-react";
+import { Lock, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
-
-const tokens = [
-  { symbol: "ETH", icon: "Ξ" },
-  { symbol: "USDC", icon: "$" },
-  { symbol: "STRK", icon: "S" },
-];
+import TokenIcon from "@/components/TokenIcon";
 
 interface SealedOrder {
   id: string;
   side: "BUY" | "SELL";
   pair: string;
+  baseSymbol: string;
+  quoteSymbol: string;
   price: string;
   amount: string;
   status: "active" | "matched" | "cancelled";
@@ -25,346 +22,194 @@ interface SealedOrder {
 export default function OrdersPage() {
   const { isConnected, connect } = useWallet();
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
-  const [tokenA, setTokenA] = useState(tokens[0]);
-  const [tokenB, setTokenB] = useState(tokens[1]);
   const [price, setPrice] = useState("");
   const [amount, setAmount] = useState("");
   const [isPlacing, setIsPlacing] = useState(false);
-  const [showCreate, setShowCreate] = useState(true);
+  const [tab, setTab] = useState<"all" | "active" | "matched">("all");
 
   const [orders, setOrders] = useState<SealedOrder[]>([
-    {
-      id: "1",
-      side: "BUY",
-      pair: "ETH/USDC",
-      price: "2,150.00",
-      amount: "1.5",
-      status: "active",
-      time: "5 min ago",
-      revealed: false,
-    },
-    {
-      id: "2",
-      side: "SELL",
-      pair: "STRK/USDC",
-      price: "0.85",
-      amount: "10,000",
-      status: "matched",
-      time: "1h ago",
-      revealed: false,
-    },
-    {
-      id: "3",
-      side: "BUY",
-      pair: "ETH/STRK",
-      price: "2,530.00",
-      amount: "0.5",
-      status: "active",
-      time: "3h ago",
-      revealed: false,
-    },
+    { id: "1", side: "BUY", pair: "ETH/USDC", baseSymbol: "ETH", quoteSymbol: "USDC", price: "2,150.00", amount: "1.5", status: "active", time: "5 min ago", revealed: false },
+    { id: "2", side: "SELL", pair: "STRK/USDC", baseSymbol: "STRK", quoteSymbol: "USDC", price: "0.85", amount: "10,000", status: "matched", time: "1h ago", revealed: false },
+    { id: "3", side: "BUY", pair: "ETH/STRK", baseSymbol: "ETH", quoteSymbol: "STRK", price: "2,530.00", amount: "0.5", status: "active", time: "3h ago", revealed: false },
   ]);
 
   const handlePlaceOrder = async () => {
     if (!price || !amount || !isConnected) return;
     setIsPlacing(true);
     await new Promise((r) => setTimeout(r, 2000));
-    setOrders((prev) => [
-      {
-        id: Date.now().toString(),
-        side,
-        pair: `${tokenA.symbol}/${tokenB.symbol}`,
-        price,
-        amount,
-        status: "active",
-        time: "Just now",
-        revealed: false,
-      },
-      ...prev,
-    ]);
+    setOrders((prev) => [{
+      id: Date.now().toString(), side, pair: "ETH/USDC", baseSymbol: "ETH", quoteSymbol: "USDC",
+      price, amount, status: "active", time: "Just now", revealed: false,
+    }, ...prev]);
     setIsPlacing(false);
     setPrice("");
     setAmount("");
   };
 
   const cancelOrder = (id: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: "cancelled" as const } : o))
-    );
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: "cancelled" as const } : o)));
   };
 
   const toggleReveal = (id: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, revealed: !o.revealed } : o))
-    );
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, revealed: !o.revealed } : o)));
   };
 
-  const statusColors = {
-    active: "text-success bg-success/10",
-    matched: "text-primary-light bg-primary/10",
-    cancelled: "text-muted bg-surface-light",
-  };
+  const filtered = orders.filter((o) => tab === "all" ? true : o.status === tab);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary-light text-sm mb-4">
-            <BookOpen className="w-3.5 h-3.5" />
-            Sealed-Bid Orders
-          </div>
-          <h1 className="text-3xl font-bold mb-2">Dark Order Book</h1>
-          <p className="text-muted">
-            Place limit orders with encrypted price & amount — revealed only at match time
-          </p>
-        </div>
+    <div className="min-h-[calc(100vh-72px)] max-w-[960px] mx-auto px-4 pt-8 sm:pt-12 pb-12">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="flex flex-col lg:flex-row gap-5">
+          {/* Create order */}
+          <div className="lg:w-[380px] shrink-0">
+            <div className="rounded-3xl bg-surface border border-border p-5 lg:sticky lg:top-[88px]">
+              <h2 className="text-lg font-semibold mb-4">New sealed order</h2>
 
-        <div className="grid lg:grid-cols-5 gap-6">
-          {/* Create Order */}
-          <div className="lg:col-span-2">
-            <div className="rounded-2xl bg-surface border border-border p-6 space-y-4 sticky top-20">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">New Sealed Order</h2>
-                <button
-                  onClick={() => setShowCreate(!showCreate)}
-                  className="lg:hidden p-1 rounded-lg hover:bg-surface-light"
-                >
-                  {showCreate ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                </button>
+              {/* Side */}
+              <div className="flex gap-1.5 p-1 rounded-2xl bg-surface-2 mb-4">
+                {(["BUY", "SELL"] as const).map((s) => (
+                  <button key={s} onClick={() => setSide(s)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                      side === s ? (s === "BUY" ? "bg-success text-white" : "bg-danger text-white") : "text-text-secondary hover:text-foreground"
+                    }`}>
+                    {s}
+                  </button>
+                ))}
               </div>
 
+              {/* Pair display */}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-surface-2 mb-4">
+                <div className="flex -space-x-2">
+                  <TokenIcon symbol="ETH" size="sm" />
+                  <TokenIcon symbol="USDC" size="sm" />
+                </div>
+                <span className="font-semibold text-sm">ETH / USDC</span>
+              </div>
+
+              {/* Price */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-sm text-text-tertiary mb-1.5">
+                  <span>Price (USDC)</span>
+                  <span className="flex items-center gap-1"><Lock className="w-3 h-3 text-primary" /> Sealed</span>
+                </div>
+                <input type="number" inputMode="decimal" placeholder="0" value={price} onChange={(e) => setPrice(e.target.value)}
+                  className="w-full p-3.5 rounded-2xl bg-surface-2 border border-border text-lg font-medium focus:outline-none focus:border-border-hover transition-colors" />
+              </div>
+
+              {/* Amount */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm text-text-tertiary mb-1.5">
+                  <span>Amount (ETH)</span>
+                  <span className="flex items-center gap-1"><Lock className="w-3 h-3 text-primary" /> Sealed</span>
+                </div>
+                <input type="number" inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)}
+                  className="w-full p-3.5 rounded-2xl bg-surface-2 border border-border text-lg font-medium focus:outline-none focus:border-border-hover transition-colors" />
+              </div>
+
+              {/* Total */}
+              {price && amount && (
+                <div className="p-3 rounded-xl bg-surface-2 flex justify-between text-sm mb-4">
+                  <span className="text-text-secondary">Total</span>
+                  <span className="font-mono">{(parseFloat(price) * parseFloat(amount)).toLocaleString()} USDC</span>
+                </div>
+              )}
+
+              {/* Submit */}
+              <button
+                onClick={isConnected ? handlePlaceOrder : connect}
+                disabled={isConnected && (!price || !amount || isPlacing)}
+                className={`w-full py-3.5 rounded-2xl text-[15px] font-semibold transition-colors flex items-center justify-center gap-2 ${
+                  !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
+                    : !price || !amount ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
+                    : side === "BUY" ? "bg-success hover:bg-success/90 text-white"
+                    : "bg-danger hover:bg-danger/90 text-white"
+                } disabled:opacity-60`}
+              >
+                {isPlacing ? (<><Loader2 className="w-4 h-4 animate-spin" /> Placing...</>)
+                  : !isConnected ? "Connect Wallet"
+                  : !price || !amount ? "Enter price & amount"
+                  : (<><Lock className="w-4 h-4" /> Place sealed {side.toLowerCase()}</>)}
+              </button>
+
+              <p className="text-xs text-text-tertiary mt-3 text-center">
+                Price and amount are encrypted on-chain until matched
+              </p>
+            </div>
+          </div>
+
+          {/* Orders list */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-1 bg-surface rounded-2xl p-1">
+                {(["all", "active", "matched"] as const).map((t) => (
+                  <button key={t} onClick={() => setTab(t)}
+                    className={`px-3.5 py-1.5 rounded-xl text-sm font-medium capitalize transition-colors ${tab === t ? "bg-surface-2 text-foreground" : "text-text-secondary hover:text-foreground"}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <span className="text-sm text-text-tertiary">{filtered.length} orders</span>
+            </div>
+
+            <div className="space-y-2">
               <AnimatePresence>
-                {showCreate && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="space-y-4"
-                  >
-                    {/* Side Toggle */}
-                    <div className="flex gap-2 p-1 rounded-xl bg-surface-light">
-                      {(["BUY", "SELL"] as const).map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => setSide(s)}
-                          className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                            side === s
-                              ? s === "BUY"
-                                ? "bg-success text-white"
-                                : "bg-danger text-white"
-                              : "text-muted hover:text-foreground"
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Pair */}
-                    <div>
-                      <label className="text-sm text-muted mb-2 block">Trading Pair</label>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 flex items-center gap-2 p-3 rounded-xl bg-surface-light border border-border">
-                          <span className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary-light">
-                            {tokenA.icon}
-                          </span>
-                          <span className="font-semibold">{tokenA.symbol}</span>
-                        </div>
-                        <span className="text-muted">/</span>
-                        <div className="flex-1 flex items-center gap-2 p-3 rounded-xl bg-surface-light border border-border">
-                          <span className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary-light">
-                            {tokenB.icon}
-                          </span>
-                          <span className="font-semibold">{tokenB.symbol}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Price */}
-                    <div>
-                      <label className="text-sm text-muted mb-2 block">
-                        Price ({tokenB.symbol}) <Lock className="w-3 h-3 inline text-primary" />
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        className="w-full p-3 rounded-xl bg-surface-light border border-border font-mono focus:outline-none focus:border-primary/50 transition-all"
-                      />
-                    </div>
-
-                    {/* Amount */}
-                    <div>
-                      <label className="text-sm text-muted mb-2 block">
-                        Amount ({tokenA.symbol}) <Lock className="w-3 h-3 inline text-primary" />
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        className="w-full p-3 rounded-xl bg-surface-light border border-border font-mono focus:outline-none focus:border-primary/50 transition-all"
-                      />
-                    </div>
-
-                    {/* Total */}
-                    {price && amount && (
-                      <div className="p-3 rounded-lg bg-surface-light/50 flex justify-between text-sm">
-                        <span className="text-muted">Total</span>
-                        <span className="font-mono">
-                          {(parseFloat(price) * parseFloat(amount)).toLocaleString()} {tokenB.symbol}
+                {filtered.map((order) => (
+                  <motion.div key={order.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className={`p-4 rounded-2xl bg-surface border border-border ${order.status === "cancelled" ? "opacity-40" : ""}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${order.side === "BUY" ? "bg-success/12 text-success" : "bg-danger/12 text-danger"}`}>
+                          {order.side}
                         </span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex -space-x-1.5">
+                            <TokenIcon symbol={order.baseSymbol} size="sm" />
+                            <TokenIcon symbol={order.quoteSymbol} size="sm" />
+                          </div>
+                          <span className="text-sm font-semibold">{order.pair}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                          order.status === "active" ? "bg-success/10 text-success"
+                            : order.status === "matched" ? "bg-primary-soft text-primary"
+                            : "bg-surface-2 text-text-tertiary"
+                        }`}>{order.status}</span>
                       </div>
-                    )}
-
-                    {/* Info */}
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/10">
-                      <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                      <p className="text-sm text-muted">
-                        Price and amount will be encrypted on-chain. Only revealed when the order is matched with a counterparty.
-                      </p>
+                      <span className="text-xs text-text-tertiary">{order.time}</span>
                     </div>
 
-                    {/* Submit */}
-                    {isConnected ? (
-                      <button
-                        onClick={handlePlaceOrder}
-                        disabled={!price || !amount || isPlacing}
-                        className={`w-full py-3.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                          side === "BUY" ? "bg-success hover:bg-success/90" : "bg-danger hover:bg-danger/90"
-                        }`}
-                      >
-                        {isPlacing ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Encrypting & Placing...
-                          </>
-                        ) : (
-                          <>
-                            <Lock className="w-4 h-4" />
-                            Place Sealed {side} Order
-                          </>
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-8">
+                        <div>
+                          <div className="text-[11px] text-text-tertiary uppercase tracking-wider mb-0.5">Price</div>
+                          {order.revealed ? <span className="text-sm font-mono">{order.price}</span>
+                            : <span className="text-sm text-text-tertiary flex items-center gap-1"><Lock className="w-3 h-3" /> Sealed</span>}
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-text-tertiary uppercase tracking-wider mb-0.5">Amount</div>
+                          {order.revealed ? <span className="text-sm font-mono">{order.amount}</span>
+                            : <span className="text-sm text-text-tertiary flex items-center gap-1"><Lock className="w-3 h-3" /> Sealed</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => toggleReveal(order.id)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
+                          {order.revealed ? <EyeOff className="w-4 h-4 text-text-tertiary" /> : <Eye className="w-4 h-4 text-primary" />}
+                        </button>
+                        {order.status === "active" && (
+                          <button onClick={() => cancelOrder(order.id)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
+                            <X className="w-4 h-4 text-text-tertiary hover:text-danger" />
+                          </button>
                         )}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={connect}
-                        className="w-full py-3.5 rounded-xl text-sm font-semibold bg-primary hover:bg-primary-dark text-white transition-all"
-                      >
-                        Connect Wallet
-                      </button>
-                    )}
+                      </div>
+                    </div>
                   </motion.div>
-                )}
+                ))}
               </AnimatePresence>
             </div>
-          </div>
 
-          {/* Orders List */}
-          <div className="lg:col-span-3 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Your Orders</h2>
-              <div className="flex gap-2 text-sm">
-                <span className="px-2 py-1 rounded-lg bg-success/10 text-success">
-                  {orders.filter((o) => o.status === "active").length} Active
-                </span>
-                <span className="px-2 py-1 rounded-lg bg-primary/10 text-primary-light">
-                  {orders.filter((o) => o.status === "matched").length} Matched
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {orders.map((order, i) => (
-                <motion.div
-                  key={order.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className={`p-4 rounded-xl bg-surface border border-border ${
-                    order.status === "cancelled" ? "opacity-50" : ""
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                          order.side === "BUY"
-                            ? "bg-success/10 text-success"
-                            : "bg-danger/10 text-danger"
-                        }`}
-                      >
-                        {order.side}
-                      </span>
-                      <span className="font-semibold">{order.pair}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${statusColors[order.status]}`}>
-                        {order.status}
-                      </span>
-                    </div>
-                    <span className="text-sm text-muted">{order.time}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-6">
-                      <div>
-                        <div className="text-xs text-muted mb-1">Price</div>
-                        <div className="font-mono text-sm">
-                          {order.revealed ? (
-                            <span className="text-primary-light">{order.price}</span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-muted">
-                              <Lock className="w-3 h-3" /> Sealed
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted mb-1">Amount</div>
-                        <div className="font-mono text-sm">
-                          {order.revealed ? (
-                            <span className="text-primary-light">{order.amount}</span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-muted">
-                              <Lock className="w-3 h-3" /> Sealed
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => toggleReveal(order.id)}
-                        className="p-2 rounded-lg bg-surface-light hover:bg-primary/10 transition-colors"
-                        title={order.revealed ? "Hide" : "Reveal"}
-                      >
-                        {order.revealed ? (
-                          <EyeOff className="w-4 h-4 text-muted" />
-                        ) : (
-                          <Eye className="w-4 h-4 text-primary" />
-                        )}
-                      </button>
-                      {order.status === "active" && (
-                        <button
-                          onClick={() => cancelOrder(order.id)}
-                          className="p-2 rounded-lg bg-surface-light hover:bg-danger/10 transition-colors"
-                          title="Cancel order"
-                        >
-                          <X className="w-4 h-4 text-muted hover:text-danger" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {orders.length === 0 && (
-              <div className="text-center py-12 text-muted">
-                <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                <p>No orders yet. Place your first sealed-bid order.</p>
+            {filtered.length === 0 && (
+              <div className="text-center py-16 text-text-tertiary">
+                <Lock className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                <p className="text-sm">No {tab === "all" ? "" : tab} orders</p>
               </div>
             )}
           </div>
