@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { StarknetProvider } from "@/components/StarknetProvider";
 import { WalletProvider } from "@/context/WalletContext";
 import Navbar from "@/components/Navbar";
 
@@ -31,10 +32,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <WalletProvider>
-          <Navbar />
-          <main className="pt-16 min-h-screen">{children}</main>
-        </WalletProvider>
+        <StarknetProvider>
+          <WalletProvider>
+            <Navbar />
+            <main className="pt-16 min-h-screen">{children}</main>
+          </WalletProvider>
+        </StarknetProvider>
       </body>
     </html>
   );

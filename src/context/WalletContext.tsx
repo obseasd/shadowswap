@@ -1,20 +1,19 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback } from "react";
+import { useAccount, useConnect, useDisconnect } from "@starknet-react/core";
 import type { TokenSymbol } from "@/lib/constants";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type StarknetWallet = any;
 
 interface WalletContextType {
   address: string | null;
   isConnected: boolean;
-  isConnecting: boolean;
-  connect: () => void;
-  connectWallet: (id: "argentX" | "braavos") => Promise<void>;
-  disconnect: () => void;
   shortAddress: string;
-  walletName: string | null;
+  // starknet-react connect
+  connect: () => void;
+  connectors: ReturnType<typeof useConnect>["connectors"];
+  connectWallet: ReturnType<typeof useConnect>["connect"];
+  disconnect: () => void;
+  isPending: boolean;
   showWalletModal: boolean;
   setShowWalletModal: (v: boolean) => void;
   // Tongo key management
@@ -30,12 +29,12 @@ interface WalletContextType {
 const WalletContext = createContext<WalletContextType>({
   address: null,
   isConnected: false,
-  isConnecting: false,
-  connect: () => {},
-  connectWallet: async () => {},
-  disconnect: () => {},
   shortAddress: "",
-  walletName: null,
+  connect: () => {},
+  connectors: [],
+  connectWallet: () => {},
+  disconnect: () => {},
+  isPending: false,
   showWalletModal: false,
   setShowWalletModal: () => {},
   tongoPrivateKey: null,
@@ -45,19 +44,11 @@ const WalletContext = createContext<WalletContextType>({
   refreshBalance: async () => {},
 });
 
-declare global {
-  interface Window {
-    starknet?: StarknetWallet;
-    starknet_argentX?: StarknetWallet;
-    starknet_braavos?: StarknetWallet;
-  }
-}
-
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [address, setAddress] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [wallet, setWallet] = useState<StarknetWallet | null>(null);
-  const [walletName, setWalletName] = useState<string | null>(null);
+  const { address: rawAddress, account, isConnected } = useAccount();
+  const { connect: connectWallet, connectors, isPending } = useConnect();
+  const { disconnect: starknetDisconnect } = useDisconnect();
+
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [tongoPrivateKey, setTongoPrivateKeyState] = useState<string | null>(null);
   const [balances, setBalances] = useState<Record<TokenSymbol, { balance: bigint; pending: bigint } | null>>({
@@ -66,6 +57,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     STRK: null,
   });
 
+  const address = rawAddress ?? null;
   const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 
   const setTongoPrivateKey = useCallback((key: string) => {
@@ -75,58 +67,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const connect = useCallback(() => {
-    setShowWalletModal(true);
-  }, []);
-
-  const connectWallet = useCallback(async (id: "argentX" | "braavos") => {
-    setIsConnecting(true);
-    setShowWalletModal(false);
-    try {
-      const w = id === "argentX" ? window.starknet_argentX : window.starknet_braavos;
-      if (!w) {
-        const url = id === "argentX"
-          ? "https://www.argent.xyz/argent-x/"
-          : "https://braavos.app/";
-        window.open(url, "_blank");
-        return;
-      }
-      await w.enable();
-      const addr = w.selectedAddress || w.account?.address;
-      if (addr) {
-        setAddress(addr);
-        setWallet(w);
-        setWalletName(id === "argentX" ? "ArgentX" : "Braavos");
-      }
+  // Restore tongo key from session on mount
+  React.useEffect(() => {
+    if (isConnected && !tongoPrivateKey) {
       const savedKey = sessionStorage.getItem("tongo_pk");
       if (savedKey) setTongoPrivateKeyState(savedKey);
-    } catch (err) {
-      console.error("Wallet connection failed:", err);
-    } finally {
-      setIsConnecting(false);
     }
-  }, []);
+  }, [isConnected, tongoPrivateKey]);
 
   const disconnect = useCallback(() => {
-    setAddress(null);
-    setWallet(null);
+    starknetDisconnect();
     setTongoPrivateKeyState(null);
     setBalances({ ETH: null, USDC: null, STRK: null });
     sessionStorage.removeItem("tongo_pk");
-  }, []);
+  }, [starknetDisconnect]);
 
   const execute = useCallback(
     async (calls: unknown[]): Promise<string | null> => {
-      if (!wallet?.account) return null;
+      if (!account) return null;
       try {
-        const result = await wallet.account.execute(calls);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await account.execute(calls as any);
         return result?.transaction_hash || null;
       } catch (err) {
         console.error("Transaction failed:", err);
         return null;
       }
     },
-    [wallet]
+    [account]
   );
 
   const refreshBalance = useCallback(
@@ -150,13 +118,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     <WalletContext.Provider
       value={{
         address,
-        isConnected: !!address,
-        isConnecting,
-        connect,
+        isConnected: !!isConnected,
+        shortAddress,
+        connect: () => setShowWalletModal(true),
+        connectors,
         connectWallet,
         disconnect,
-        shortAddress,
-        walletName,
+        isPending,
         showWalletModal,
         setShowWalletModal,
         tongoPrivateKey,

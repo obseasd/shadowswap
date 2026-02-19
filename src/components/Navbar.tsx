@@ -16,7 +16,7 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { isConnected, isConnecting, connect, connectWallet, disconnect, shortAddress, walletName, showWalletModal, setShowWalletModal } = useWallet();
+  const { isConnected, isPending, connectors, connectWallet, disconnect, shortAddress, showWalletModal, setShowWalletModal } = useWallet();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -56,7 +56,7 @@ export default function Navbar() {
             {/* Network badge */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface text-text-secondary text-sm">
               <div className="w-2 h-2 rounded-full bg-success" />
-              Starknet
+              Sepolia
             </div>
 
             {isConnected ? (
@@ -65,15 +65,15 @@ export default function Navbar() {
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-hover text-sm font-medium transition-colors"
               >
                 <div className="w-2 h-2 rounded-full bg-success" />
-                {walletName ? `${walletName} · ${shortAddress}` : shortAddress}
+                {shortAddress}
               </button>
             ) : (
               <button
-                onClick={connect}
-                disabled={isConnecting}
+                onClick={() => setShowWalletModal(true)}
+                disabled={isPending}
                 className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary hover:bg-primary-hover text-white transition-colors disabled:opacity-50"
               >
-                {isConnecting ? "Connecting..." : "Connect"}
+                {isPending ? "Connecting..." : "Connect"}
               </button>
             )}
 
@@ -147,26 +147,32 @@ export default function Navbar() {
                 </button>
               </div>
               <div className="space-y-2">
-                <button
-                  onClick={() => connectWallet("argentX")}
-                  className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-surface-2 border border-border transition-colors"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-[#ff875b]/15 flex items-center justify-center text-lg font-bold text-[#ff875b]">A</div>
-                  <div className="text-left">
-                    <div className="font-semibold">ArgentX</div>
-                    <div className="text-sm text-text-secondary">Starknet wallet</div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => connectWallet("braavos")}
-                  className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-surface-2 border border-border transition-colors"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-[#f5c451]/15 flex items-center justify-center text-lg font-bold text-[#f5c451]">B</div>
-                  <div className="text-left">
-                    <div className="font-semibold">Braavos</div>
-                    <div className="text-sm text-text-secondary">Starknet wallet</div>
-                  </div>
-                </button>
+                {connectors.map((connector) => (
+                  <button
+                    key={connector.id}
+                    onClick={() => {
+                      connectWallet({ connector });
+                      setShowWalletModal(false);
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-surface-2 border border-border transition-colors"
+                  >
+                    {connector.icon ? (
+                      <img
+                        src={typeof connector.icon === "string" ? connector.icon : connector.icon.dark}
+                        alt={connector.name}
+                        className="w-10 h-10 rounded-xl"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-primary-soft flex items-center justify-center text-lg font-bold text-primary">
+                        {connector.name.charAt(0)}
+                      </div>
+                    )}
+                    <div className="text-left">
+                      <div className="font-semibold">{connector.name}</div>
+                      <div className="text-sm text-text-secondary">Starknet wallet</div>
+                    </div>
+                  </button>
+                ))}
               </div>
             </motion.div>
           </motion.div>
