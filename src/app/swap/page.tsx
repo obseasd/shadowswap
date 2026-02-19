@@ -1,16 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowDown, Lock, Settings, Loader2, ChevronDown, Eye, EyeOff, ExternalLink, X } from "lucide-react";
+import { ArrowDown, Lock, Settings, Loader2, ChevronDown, Eye, EyeOff, ExternalLink, X, Key } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import TokenIcon from "@/components/TokenIcon";
+import { type TokenSymbol, getToken, getExplorerTxUrl } from "@/lib/constants";
 
-const tokens = [
+const TOKEN_LIST: { symbol: TokenSymbol; name: string }[] = [
   { symbol: "ETH", name: "Ethereum" },
   { symbol: "USDC", name: "USD Coin" },
   { symbol: "STRK", name: "Starknet Token" },
 ];
+
+/** Compute a rate between two tokens using their Tongo rates (ERC20/Tongo unit).
+ *  Rate = tokenIn.rate / tokenOut.rate  (as a float for display).
+ */
+function getSwapRate(from: TokenSymbol, to: TokenSymbol): number {
+  const fromToken = getToken(from);
+  const toToken = getToken(to);
+  // rate field = ERC20 units per 1 Tongo unit
+  // price of 1 tokenIn in tokenOut = (fromToken.rate / fromToken_decimals) / (toToken.rate / toToken_decimals)
+  // Simplified: since both are bigint rates mapping to the same Tongo unit scale,
+  // 1 Tongo-unit of tokenIn = fromToken.rate ERC20 of tokenIn
+  // 1 Tongo-unit of tokenOut = toToken.rate ERC20 of tokenOut
+  // So 1 ERC20 of tokenIn = (1/fromToken.rate) tongo units, which equals (toToken.rate / fromToken.rate) ERC20 of tokenOut... no.
+  // Actually: 1 ERC20-unit of tokenIn = 1/fromToken.rate Tongo units. Converting that many Tongo units of tokenOut = (1/fromToken.rate) * toToken.rate ERC20-units of tokenOut.
+  // But we want user-facing amounts (considering decimals).
+  const fromDec = 10 ** fromToken.decimals;
+  const toDec = 10 ** toToken.decimals;
+  // 1 human-unit of tokenIn = fromDec ERC20 wei of tokenIn
+  // = (fromDec / Number(fromToken.rate)) tongo-units
+  // each tongo-unit of tokenOut = Number(toToken.rate) ERC20 wei of tokenOut = Number(toToken.rate)/toDec human-units
+  // So 1 human-unit tokenIn => (fromDec / Number(fromToken.rate)) * (Number(toToken.rate) / toDec) human-units tokenOut
+  return (fromDec / Number(fromToken.rate)) * (Number(toToken.rate) / toDec);
+}
+
+function formatBalance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
+  if (raw == null) return "0";
+  const token = getToken(symbol);
+  const divisor = token.rate;
+  const whole = raw / divisor;
+  const remainder = raw % divisor;
+  const decimals = symbol === "USDC" ? 2 : 4;
+  const fracStr = remainder.toString().padStart(divisor.toString().length - 1, "0").slice(0, decimals);
+  return `${whole.toLocaleString()}.${fracStr}`;
+}
 
 interface SwapTx {
   id: string;
@@ -24,22 +59,34 @@ interface SwapTx {
 }
 
 export default function SwapPage() {
-  const { isConnected, connect } = useWallet();
-  const [tokenIn, setTokenIn] = useState(tokens[0]);
-  const [tokenOut, setTokenOut] = useState(tokens[1]);
+  const { isConnected, connect, address, tongoPrivateKey, setTongoPrivateKey, execute, balances, refreshBalance } = useWallet();
+  const [tokenIn, setTokenIn] = useState(TOKEN_LIST[0]);
+  const [tokenOut, setTokenOut] = useState(TOKEN_LIST[1]);
   const [amountIn, setAmountIn] = useState("");
   const [slippage, setSlippage] = useState("0.5");
   const [showSettings, setShowSettings] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [swapComplete, setSwapComplete] = useState(false);
   const [selectingFor, setSelectingFor] = useState<"in" | "out" | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [keyInput, setKeyInput] = useState("");
 
-  const [history, setHistory] = useState<SwapTx[]>([
-    { id: "1", from: "ETH", to: "USDC", amountIn: "1.5", amountOut: "3,247.50", time: "2 min ago", hash: "0x7a3f...e912", revealed: false },
-    { id: "2", from: "STRK", to: "ETH", amountIn: "5,000", amountOut: "0.82", time: "15 min ago", hash: "0x4b2c...a3f1", revealed: false },
-  ]);
+  const [history, setHistory] = useState<SwapTx[]>([]);
 
-  const estimatedOut = amountIn ? (parseFloat(amountIn) * 2165).toFixed(2) : "";
+  // Refresh balances for swap tokens
+  const refreshSwapBalances = useCallback(async () => {
+    if (!tongoPrivateKey) return;
+    await refreshBalance(tokenIn.symbol);
+    await refreshBalance(tokenOut.symbol);
+  }, [tongoPrivateKey, refreshBalance, tokenIn.symbol, tokenOut.symbol]);
+
+  useEffect(() => {
+    refreshSwapBalances();
+  }, [refreshSwapBalances]);
+
+  const rate = getSwapRate(tokenIn.symbol, tokenOut.symbol);
+  const estimatedOut = amountIn ? (parseFloat(amountIn) * rate).toFixed(tokenOut.symbol === "USDC" ? 2 : 6) : "";
 
   const flipTokens = () => {
     setTokenIn(tokenOut);
@@ -48,26 +95,47 @@ export default function SwapPage() {
   };
 
   const handleSwap = async () => {
-    if (!amountIn || !isConnected) return;
+    if (!amountIn || !isConnected || !tongoPrivateKey || !address) return;
     setIsSwapping(true);
     setSwapComplete(false);
-    await new Promise((r) => setTimeout(r, 2500));
-    setIsSwapping(false);
-    setSwapComplete(true);
-    setHistory((prev) => [
-      {
-        id: Date.now().toString(),
-        from: tokenIn.symbol,
-        to: tokenOut.symbol,
-        amountIn,
-        amountOut: estimatedOut,
-        time: "Just now",
-        hash: `0x${Math.random().toString(16).slice(2, 6)}...${Math.random().toString(16).slice(2, 6)}`,
-        revealed: false,
-      },
-      ...prev,
-    ]);
-    setTimeout(() => { setSwapComplete(false); setAmountIn(""); }, 2000);
+    setTxHash(null);
+    setError(null);
+    try {
+      // For the hackathon demo, a "swap" is modeled as:
+      // 1. Transfer tokenIn from user's encrypted balance (sends to a pool/burn address conceptually)
+      // 2. The pool would transfer tokenOut back. For demo we just do the outgoing transfer.
+      const { buildTransferOp } = await import("@/lib/tongo");
+      // Use a placeholder pool public key (in production this would be the AMM pool's Tongo public key)
+      const poolPublicKey = "0x0000000000000000000000000000000000000000000000000000000000000001";
+      const { calls } = await buildTransferOp(tongoPrivateKey, tokenIn.symbol, poolPublicKey, amountIn, address);
+      const hash = await execute(calls);
+      if (hash) {
+        setTxHash(hash);
+        setSwapComplete(true);
+        setHistory((prev) => [
+          {
+            id: Date.now().toString(),
+            from: tokenIn.symbol,
+            to: tokenOut.symbol,
+            amountIn,
+            amountOut: estimatedOut,
+            time: "Just now",
+            hash,
+            revealed: false,
+          },
+          ...prev,
+        ]);
+        await refreshBalance(tokenIn.symbol);
+        await refreshBalance(tokenOut.symbol);
+        setTimeout(() => { setSwapComplete(false); setAmountIn(""); }, 3000);
+      } else {
+        setError("Swap transaction was rejected or failed.");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Swap failed. Please try again.");
+    } finally {
+      setIsSwapping(false);
+    }
   };
 
   const toggleRevealTx = (id: string) => {
@@ -110,7 +178,10 @@ export default function SwapPage() {
         <div className="rounded-3xl bg-surface border border-border p-1.5">
           {/* Pay */}
           <div className="rounded-2xl bg-surface-2 p-4 sm:p-5">
-            <div className="text-sm text-text-tertiary mb-2">You pay</div>
+            <div className="flex items-center justify-between text-sm text-text-tertiary mb-2">
+              <span>You pay</span>
+              <span className="text-xs">Bal: {balances[tokenIn.symbol] ? formatBalance(balances[tokenIn.symbol]!.balance, tokenIn.symbol) : "--"}</span>
+            </div>
             <div className="flex items-center gap-3">
               <input type="number" inputMode="decimal" placeholder="0" value={amountIn} onChange={(e) => setAmountIn(e.target.value)}
                 className="flex-1 text-[32px] sm:text-4xl font-medium bg-transparent focus:outline-none placeholder-text-tertiary min-w-0" />
@@ -133,7 +204,10 @@ export default function SwapPage() {
 
           {/* Receive */}
           <div className="rounded-2xl bg-surface-2 p-4 sm:p-5">
-            <div className="text-sm text-text-tertiary mb-2">You receive</div>
+            <div className="flex items-center justify-between text-sm text-text-tertiary mb-2">
+              <span>You receive</span>
+              <span className="text-xs">Bal: {balances[tokenOut.symbol] ? formatBalance(balances[tokenOut.symbol]!.balance, tokenOut.symbol) : "--"}</span>
+            </div>
             <div className="flex items-center gap-3">
               <div className="flex-1 flex items-center gap-2 min-w-0">
                 {estimatedOut && <Lock className="w-4 h-4 text-primary shrink-0" />}
@@ -154,18 +228,39 @@ export default function SwapPage() {
         {/* Rate */}
         {amountIn && (
           <div className="mt-3 p-4 rounded-2xl bg-surface border border-border space-y-2.5">
-            <div className="flex justify-between text-sm"><span className="text-text-secondary">Rate</span><span>1 {tokenIn.symbol} = 2,165 {tokenOut.symbol}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-text-secondary">Rate</span><span>1 {tokenIn.symbol} = {rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} {tokenOut.symbol}</span></div>
             <div className="flex justify-between text-sm"><span className="text-text-secondary">Slippage</span><span>{slippage}%</span></div>
             <div className="flex justify-between text-sm"><span className="text-text-secondary">Privacy</span><span className="flex items-center gap-1 text-primary"><Lock className="w-3.5 h-3.5" /> Encrypted</span></div>
+          </div>
+        )}
+
+        {/* Tongo key setup */}
+        {isConnected && !tongoPrivateKey && (
+          <div className="mt-3 p-4 rounded-2xl bg-surface border border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <Key className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold">Set Tongo Private Key</span>
+            </div>
+            <p className="text-xs text-text-tertiary mb-3">Enter your Tongo private key to enable encrypted swaps.</p>
+            <div className="flex gap-2">
+              <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
+                className="flex-1 p-2.5 rounded-xl bg-surface-2 border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
+              <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
+                disabled={!keyInput.trim()}
+                className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
+                Save
+              </button>
+            </div>
           </div>
         )}
 
         {/* Button */}
         <button
           onClick={isConnected ? handleSwap : connect}
-          disabled={isConnected && (!amountIn || isSwapping)}
+          disabled={isConnected && (!amountIn || isSwapping || !tongoPrivateKey)}
           className={`w-full mt-3 py-4 rounded-2xl text-[17px] font-semibold transition-colors flex items-center justify-center gap-2 ${
             !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
+              : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : !amountIn ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : swapComplete ? "bg-success/15 text-success"
               : "bg-primary hover:bg-primary-hover text-white"
@@ -174,9 +269,28 @@ export default function SwapPage() {
           {isSwapping ? (<><Loader2 className="w-5 h-5 animate-spin" /> Swapping...</>)
             : swapComplete ? "Swap successful"
             : !isConnected ? "Connect Wallet"
+            : !tongoPrivateKey ? "Set Tongo key above"
             : !amountIn ? "Enter an amount"
             : "Swap"}
         </button>
+
+        {/* Error message */}
+        {error && (
+          <div className="mt-2 p-3 rounded-xl bg-danger/10 text-danger text-sm text-center">
+            {error}
+          </div>
+        )}
+
+        {/* Transaction link */}
+        {txHash && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="text-text-tertiary">Tx:</span>
+            <a href={getExplorerTxUrl(txHash)}
+              target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 font-mono text-xs">
+              {txHash.slice(0, 10)}...{txHash.slice(-6)} <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        )}
       </motion.div>
 
       {/* Token modal */}
@@ -192,11 +306,14 @@ export default function SwapPage() {
                 <button onClick={() => setSelectingFor(null)} className="p-1.5 rounded-xl hover:bg-surface-2 transition-colors"><X className="w-5 h-5 text-text-secondary" /></button>
               </div>
               <div className="space-y-1">
-                {tokens.filter((t) => (selectingFor === "in" ? t.symbol !== tokenOut.symbol : t.symbol !== tokenIn.symbol)).map((token) => (
+                {TOKEN_LIST.filter((t) => (selectingFor === "in" ? t.symbol !== tokenOut.symbol : t.symbol !== tokenIn.symbol)).map((token) => (
                   <button key={token.symbol} onClick={() => { if (selectingFor === "in") setTokenIn(token); else setTokenOut(token); setSelectingFor(null); }}
                     className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-surface-2 transition-colors">
                     <TokenIcon symbol={token.symbol} size="lg" />
-                    <div className="text-left"><div className="font-semibold">{token.symbol}</div><div className="text-sm text-text-secondary">{token.name}</div></div>
+                    <div className="text-left flex-1"><div className="font-semibold">{token.symbol}</div><div className="text-sm text-text-secondary">{token.name}</div></div>
+                    <span className="text-sm text-text-tertiary font-mono">
+                      {balances[token.symbol] ? formatBalance(balances[token.symbol]!.balance, token.symbol) : "--"}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -228,7 +345,7 @@ export default function SwapPage() {
                   <button onClick={() => toggleRevealTx(tx.id)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
                     {tx.revealed ? <EyeOff className="w-3.5 h-3.5 text-text-tertiary" /> : <Eye className="w-3.5 h-3.5 text-primary" />}
                   </button>
-                  <a href="#" className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors"><ExternalLink className="w-3.5 h-3.5 text-text-tertiary" /></a>
+                  <a href={getExplorerTxUrl(tx.hash)} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors"><ExternalLink className="w-3.5 h-3.5 text-text-tertiary" /></a>
                 </div>
               </div>
             ))}

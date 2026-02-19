@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Eye, EyeOff, Loader2, X } from "lucide-react";
+import { Lock, Eye, EyeOff, Loader2, X, ExternalLink, Key } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import TokenIcon from "@/components/TokenIcon";
+import { getExplorerTxUrl } from "@/lib/constants";
 
 interface SealedOrder {
   id: string;
@@ -17,33 +18,55 @@ interface SealedOrder {
   status: "active" | "matched" | "cancelled";
   time: string;
   revealed: boolean;
+  txHash?: string;
 }
 
 export default function OrdersPage() {
-  const { isConnected, connect } = useWallet();
+  const { isConnected, connect, address, tongoPrivateKey, setTongoPrivateKey, execute, refreshBalance } = useWallet();
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [price, setPrice] = useState("");
   const [amount, setAmount] = useState("");
   const [isPlacing, setIsPlacing] = useState(false);
   const [tab, setTab] = useState<"all" | "active" | "matched">("all");
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [keyInput, setKeyInput] = useState("");
 
-  const [orders, setOrders] = useState<SealedOrder[]>([
-    { id: "1", side: "BUY", pair: "ETH/USDC", baseSymbol: "ETH", quoteSymbol: "USDC", price: "2,150.00", amount: "1.5", status: "active", time: "5 min ago", revealed: false },
-    { id: "2", side: "SELL", pair: "STRK/USDC", baseSymbol: "STRK", quoteSymbol: "USDC", price: "0.85", amount: "10,000", status: "matched", time: "1h ago", revealed: false },
-    { id: "3", side: "BUY", pair: "ETH/STRK", baseSymbol: "ETH", quoteSymbol: "STRK", price: "2,530.00", amount: "0.5", status: "active", time: "3h ago", revealed: false },
-  ]);
+  const [orders, setOrders] = useState<SealedOrder[]>([]);
 
   const handlePlaceOrder = async () => {
-    if (!price || !amount || !isConnected) return;
+    if (!price || !amount || !isConnected || !tongoPrivateKey || !address) return;
     setIsPlacing(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    setOrders((prev) => [{
-      id: Date.now().toString(), side, pair: "ETH/USDC", baseSymbol: "ETH", quoteSymbol: "USDC",
-      price, amount, status: "active", time: "Just now", revealed: false,
-    }, ...prev]);
-    setIsPlacing(false);
-    setPrice("");
-    setAmount("");
+    setTxHash(null);
+    setError(null);
+    try {
+      // Placing an order is a commitment: transfer the order amount as an encrypted transfer.
+      // For a BUY order on ETH/USDC, we commit USDC (price * amount).
+      // For a SELL order, we commit ETH (amount).
+      const { buildTransferOp } = await import("@/lib/tongo");
+      const commitToken = side === "BUY" ? "USDC" : "ETH";
+      const commitAmount = side === "BUY" ? (parseFloat(price) * parseFloat(amount)).toString() : amount;
+      // Placeholder orderbook contract public key
+      const orderbookPublicKey = "0x0000000000000000000000000000000000000000000000000000000000000002";
+      const { calls } = await buildTransferOp(tongoPrivateKey, commitToken, orderbookPublicKey, commitAmount, address);
+      const hash = await execute(calls);
+      if (hash) {
+        setTxHash(hash);
+        setOrders((prev) => [{
+          id: Date.now().toString(), side, pair: "ETH/USDC", baseSymbol: "ETH", quoteSymbol: "USDC",
+          price, amount, status: "active", time: "Just now", revealed: false, txHash: hash,
+        }, ...prev]);
+        await refreshBalance(commitToken as "ETH" | "USDC" | "STRK");
+        setPrice("");
+        setAmount("");
+      } else {
+        setError("Order transaction was rejected or failed.");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to place order. Please try again.");
+    } finally {
+      setIsPlacing(false);
+    }
   };
 
   const cancelOrder = (id: string) => {
@@ -114,12 +137,33 @@ export default function OrdersPage() {
                 </div>
               )}
 
+              {/* Tongo key setup */}
+              {isConnected && !tongoPrivateKey && (
+                <div className="mb-4 p-3 rounded-2xl bg-surface-2 border border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Key className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-semibold">Set Tongo Private Key</span>
+                  </div>
+                  <p className="text-xs text-text-tertiary mb-2">Required for placing sealed orders.</p>
+                  <div className="flex gap-2">
+                    <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
+                      className="flex-1 p-2 rounded-xl bg-surface border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
+                    <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
+                      disabled={!keyInput.trim()}
+                      className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Submit */}
               <button
                 onClick={isConnected ? handlePlaceOrder : connect}
-                disabled={isConnected && (!price || !amount || isPlacing)}
+                disabled={isConnected && (!price || !amount || isPlacing || !tongoPrivateKey)}
                 className={`w-full py-3.5 rounded-2xl text-[15px] font-semibold transition-colors flex items-center justify-center gap-2 ${
                   !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
+                    : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : !price || !amount ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : side === "BUY" ? "bg-success hover:bg-success/90 text-white"
                     : "bg-danger hover:bg-danger/90 text-white"
@@ -127,9 +171,28 @@ export default function OrdersPage() {
               >
                 {isPlacing ? (<><Loader2 className="w-4 h-4 animate-spin" /> Placing...</>)
                   : !isConnected ? "Connect Wallet"
+                  : !tongoPrivateKey ? "Set Tongo key above"
                   : !price || !amount ? "Enter price & amount"
                   : (<><Lock className="w-4 h-4" /> Place sealed {side.toLowerCase()}</>)}
               </button>
+
+              {/* Error message */}
+              {error && (
+                <div className="mt-2 p-2.5 rounded-xl bg-danger/10 text-danger text-xs text-center">
+                  {error}
+                </div>
+              )}
+
+              {/* Transaction link */}
+              {txHash && (
+                <div className="mt-2 flex items-center justify-center gap-2 text-xs">
+                  <span className="text-text-tertiary">Tx:</span>
+                  <a href={getExplorerTxUrl(txHash)}
+                    target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 font-mono">
+                    {txHash.slice(0, 10)}...{txHash.slice(-6)} <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
 
               <p className="text-xs text-text-tertiary mt-3 text-center">
                 Price and amount are encrypted on-chain until matched
@@ -194,6 +257,11 @@ export default function OrdersPage() {
                         <button onClick={() => toggleReveal(order.id)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
                           {order.revealed ? <EyeOff className="w-4 h-4 text-text-tertiary" /> : <Eye className="w-4 h-4 text-primary" />}
                         </button>
+                        {order.txHash && (
+                          <a href={getExplorerTxUrl(order.txHash)} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
+                            <ExternalLink className="w-4 h-4 text-text-tertiary" />
+                          </a>
+                        )}
                         {order.status === "active" && (
                           <button onClick={() => cancelOrder(order.id)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
                             <X className="w-4 h-4 text-text-tertiary hover:text-danger" />

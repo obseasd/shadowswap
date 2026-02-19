@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Eye, Shield, UserMinus, Key, Loader2, CheckCircle, Copy, Check } from "lucide-react";
+import { Eye, Shield, UserMinus, Key as KeyIcon, Loader2, CheckCircle, Copy, Check } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 
 interface Auditor {
@@ -13,22 +13,35 @@ interface Auditor {
   status: "active" | "revoked";
 }
 
+/** Derive a viewing key from the Tongo private key (demo: simple hash). */
+function deriveViewingKey(tongoPrivateKey: string): string {
+  // Simple deterministic derivation for demo purposes.
+  // In production this would be a proper cryptographic derivation.
+  let hash = 0;
+  for (let i = 0; i < tongoPrivateKey.length; i++) {
+    const char = tongoPrivateKey.charCodeAt(i);
+    hash = ((hash << 5) - hash + char) | 0;
+  }
+  const hex = Math.abs(hash).toString(16).padStart(16, "0");
+  return `0xvk_${hex.slice(0, 16)}${hex.slice(0, 8)}${hex.slice(0, 8)}`;
+}
+
 export default function CompliancePage() {
-  const { isConnected, connect } = useWallet();
+  const { isConnected, connect, tongoPrivateKey, setTongoPrivateKey } = useWallet();
   const [auditorAddress, setAuditorAddress] = useState("");
   const [auditorLabel, setAuditorLabel] = useState("");
   const [isGranting, setIsGranting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
 
-  const [auditors, setAuditors] = useState<Auditor[]>([
-    { id: "1", address: "0x04a3b7fE028F2E6E4380D4bA5F6e7D6B8C3e9a12F1dC4E8b2A7c5D0F9e3B6a1", label: "Treasury Auditor", grantedAt: "Feb 15, 2025", status: "active" },
-    { id: "2", address: "0x07d2E9c1A5B8F3e6D4a0C7b2E9F1d5A8c3B6e0D7f2A4b9C1e5F8a3D6b0E7c2", label: "Compliance Officer", grantedAt: "Feb 10, 2025", status: "revoked" },
-  ]);
+  const [auditors, setAuditors] = useState<Auditor[]>([]);
 
   const handleGrant = async () => {
-    if (!auditorAddress || !isConnected) return;
+    if (!auditorAddress || !isConnected || !tongoPrivateKey) return;
     setIsGranting(true);
-    await new Promise((r) => setTimeout(r, 2000));
+    // Auditor grant is local state for now (viewing key contract not deployed).
+    // Simulate a brief delay for UX consistency.
+    await new Promise((r) => setTimeout(r, 1000));
     setAuditors((prev) => [{
       id: Date.now().toString(), address: auditorAddress, label: auditorLabel || "Unnamed Auditor",
       grantedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), status: "active",
@@ -42,8 +55,17 @@ export default function CompliancePage() {
     setAuditors((prev) => prev.map((a) => a.id === id ? { ...a, status: a.status === "active" ? "revoked" as const : "active" as const } : a));
   };
 
-  const viewingKeyExample = "0xvk_7a3f9b2c4d1e8a5f...c3b6a1d0e9f2";
-  const copyKey = () => { navigator.clipboard.writeText(viewingKeyExample); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+  const viewingKey = useMemo(() => {
+    if (!tongoPrivateKey) return null;
+    return deriveViewingKey(tongoPrivateKey);
+  }, [tongoPrivateKey]);
+
+  const copyKey = () => {
+    if (!viewingKey) return;
+    navigator.clipboard.writeText(viewingKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="min-h-[calc(100vh-72px)] max-w-[960px] mx-auto px-4 pt-8 sm:pt-12 pb-12">
@@ -84,29 +106,57 @@ export default function CompliancePage() {
 
                 <div>
                   <label className="text-sm text-text-tertiary mb-1.5 block">Your viewing key</label>
-                  <div className="flex items-center gap-2 p-3 rounded-2xl bg-surface-2 border border-border">
-                    <Key className="w-4 h-4 text-primary shrink-0" />
-                    <span className="text-sm font-mono text-text-tertiary truncate flex-1">{viewingKeyExample}</span>
-                    <button onClick={copyKey} className="p-1 rounded-lg hover:bg-surface-hover transition-colors shrink-0">
-                      {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-text-tertiary" />}
-                    </button>
-                  </div>
+                  {viewingKey ? (
+                    <div className="flex items-center gap-2 p-3 rounded-2xl bg-surface-2 border border-border">
+                      <KeyIcon className="w-4 h-4 text-primary shrink-0" />
+                      <span className="text-sm font-mono text-text-tertiary truncate flex-1">{viewingKey}</span>
+                      <button onClick={copyKey} className="p-1 rounded-lg hover:bg-surface-hover transition-colors shrink-0">
+                        {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-text-tertiary" />}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-2xl bg-surface-2 border border-border text-sm text-text-tertiary">
+                      Set your Tongo private key to generate a viewing key
+                    </div>
+                  )}
                 </div>
               </div>
 
+              {/* Tongo key setup */}
+              {isConnected && !tongoPrivateKey && (
+                <div className="mt-4 p-3 rounded-2xl bg-surface-2 border border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <KeyIcon className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-semibold">Set Tongo Private Key</span>
+                  </div>
+                  <p className="text-xs text-text-tertiary mb-2">Required to derive your viewing key.</p>
+                  <div className="flex gap-2">
+                    <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
+                      className="flex-1 p-2 rounded-xl bg-surface border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
+                    <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
+                      disabled={!keyInput.trim()}
+                      className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={isConnected ? handleGrant : connect}
-                disabled={isConnected && (!auditorAddress || isGranting)}
+                disabled={isConnected && (!auditorAddress || isGranting || !tongoPrivateKey)}
                 className={`w-full mt-4 py-3.5 rounded-2xl text-[15px] font-semibold transition-colors flex items-center justify-center gap-2 ${
                   !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
+                    : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : !auditorAddress ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : "bg-primary hover:bg-primary-hover text-white"
                 } disabled:opacity-60`}
               >
                 {isGranting ? (<><Loader2 className="w-4 h-4 animate-spin" /> Encrypting key...</>)
                   : !isConnected ? "Connect Wallet"
+                  : !tongoPrivateKey ? "Set Tongo key above"
                   : !auditorAddress ? "Enter auditor address"
-                  : (<><Key className="w-4 h-4" /> Grant access</>)}
+                  : (<><KeyIcon className="w-4 h-4" /> Grant access</>)}
               </button>
             </div>
           </div>

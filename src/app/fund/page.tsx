@@ -1,39 +1,116 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Unlock, ArrowDown, Eye, EyeOff, Loader2, ChevronDown, X } from "lucide-react";
+import { Lock, Unlock, ArrowDown, Eye, EyeOff, Loader2, ChevronDown, X, ExternalLink, RefreshCw, Key } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import TokenIcon from "@/components/TokenIcon";
+import { type TokenSymbol, getToken, getExplorerTxUrl } from "@/lib/constants";
 
-const tokens = [
-  { symbol: "ETH", name: "Ethereum", balance: "2.4500" },
-  { symbol: "USDC", name: "USD Coin", balance: "5,000.00" },
-  { symbol: "STRK", name: "Starknet Token", balance: "12,350.00" },
+const TOKEN_LIST: { symbol: TokenSymbol; name: string }[] = [
+  { symbol: "ETH", name: "Ethereum" },
+  { symbol: "USDC", name: "USD Coin" },
+  { symbol: "STRK", name: "Starknet Token" },
 ];
 
 type Mode = "fund" | "withdraw";
 
+function formatBalance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
+  if (raw == null) return "0";
+  const token = getToken(symbol);
+  const divisor = token.rate;
+  const whole = raw / divisor;
+  const remainder = raw % divisor;
+  const decimals = symbol === "USDC" ? 2 : 4;
+  const fracStr = remainder.toString().padStart(divisor.toString().length - 1, "0").slice(0, decimals);
+  return `${whole.toLocaleString()}.${fracStr}`;
+}
+
 export default function FundPage() {
-  const { isConnected, connect } = useWallet();
+  const { isConnected, connect, address, tongoPrivateKey, setTongoPrivateKey, execute, balances, refreshBalance } = useWallet();
   const [mode, setMode] = useState<Mode>("fund");
-  const [selectedToken, setSelectedToken] = useState(tokens[0]);
+  const [selectedToken, setSelectedToken] = useState(TOKEN_LIST[0]);
   const [amount, setAmount] = useState("");
   const [showSelector, setShowSelector] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showEncrypted, setShowEncrypted] = useState(false);
   const [revealedBalances, setRevealedBalances] = useState<Record<string, boolean>>({});
   const [txComplete, setTxComplete] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [isRollingOver, setIsRollingOver] = useState<TokenSymbol | null>(null);
+
+  // Refresh balances when tongo key is set
+  const refreshAll = useCallback(async () => {
+    if (!tongoPrivateKey) return;
+    for (const t of TOKEN_LIST) {
+      await refreshBalance(t.symbol);
+    }
+  }, [tongoPrivateKey, refreshBalance]);
+
+  useEffect(() => {
+    refreshAll();
+  }, [refreshAll]);
+
+  const handleRollover = async (tokenSymbol: TokenSymbol) => {
+    if (!tongoPrivateKey || !address) return;
+    setIsRollingOver(tokenSymbol);
+    setError(null);
+    try {
+      const { buildRolloverOp } = await import("@/lib/tongo");
+      const { calls } = await buildRolloverOp(tongoPrivateKey, tokenSymbol, address);
+      const hash = await execute(calls);
+      if (hash) {
+        setTxHash(hash);
+        await refreshBalance(tokenSymbol);
+      } else {
+        setError("Rollover transaction failed.");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Rollover failed.");
+    } finally {
+      setIsRollingOver(null);
+    }
+  };
 
   const handleProcess = async () => {
-    if (!amount || !isConnected) return;
+    if (!amount || !isConnected || !tongoPrivateKey || !address) return;
     setIsProcessing(true);
     setTxComplete(false);
-    await new Promise((r) => setTimeout(r, 2500));
-    setIsProcessing(false);
-    setTxComplete(true);
-    setShowEncrypted(true);
-    setTimeout(() => setTxComplete(false), 3000);
+    setTxHash(null);
+    setError(null);
+    try {
+      if (mode === "fund") {
+        const { buildFundOp } = await import("@/lib/tongo");
+        const { calls } = await buildFundOp(tongoPrivateKey, selectedToken.symbol, amount, address);
+        const hash = await execute(calls);
+        if (hash) {
+          setTxHash(hash);
+          setTxComplete(true);
+          setShowEncrypted(true);
+          await refreshBalance(selectedToken.symbol);
+        } else {
+          setError("Fund transaction was rejected or failed.");
+        }
+      } else {
+        const { buildWithdrawOp } = await import("@/lib/tongo");
+        const { calls } = await buildWithdrawOp(tongoPrivateKey, selectedToken.symbol, amount, address, address);
+        const hash = await execute(calls);
+        if (hash) {
+          setTxHash(hash);
+          setTxComplete(true);
+          await refreshBalance(selectedToken.symbol);
+        } else {
+          setError("Withdraw transaction was rejected or failed.");
+        }
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Transaction failed. Please try again.");
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setTxComplete(false), 5000);
+    }
   };
 
   const toggleReveal = (symbol: string) => {
@@ -64,9 +141,11 @@ export default function FundPage() {
           <div className="rounded-2xl bg-surface-2 p-4 sm:p-5">
             <div className="flex items-center justify-between text-sm text-text-tertiary mb-2">
               <span>{mode === "fund" ? "You deposit" : "You decrypt"}</span>
-              <button onClick={() => setAmount(selectedToken.balance.replace(",", ""))} className="hover:text-foreground transition-colors">
-                Balance: {mode === "fund" ? selectedToken.balance : "***"} {selectedToken.symbol}
-              </button>
+              <span className="text-xs">
+                {mode === "fund"
+                  ? `Balance: ${balances[selectedToken.symbol] ? formatBalance(balances[selectedToken.symbol]!.balance, selectedToken.symbol) : "--"} ${selectedToken.symbol}`
+                  : `Encrypted: ${balances[selectedToken.symbol] ? formatBalance(balances[selectedToken.symbol]!.balance, selectedToken.symbol) : "--"} ${selectedToken.symbol}`}
+              </span>
             </div>
             <div className="flex items-center gap-3">
               <input type="number" inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)}
@@ -112,12 +191,33 @@ export default function FundPage() {
           </div>
         </div>
 
+        {/* Tongo key setup */}
+        {isConnected && !tongoPrivateKey && (
+          <div className="mt-3 p-4 rounded-2xl bg-surface border border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <Key className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold">Set Tongo Private Key</span>
+            </div>
+            <p className="text-xs text-text-tertiary mb-3">Enter your Tongo private key to enable encrypted operations. This is separate from your Starknet wallet key.</p>
+            <div className="flex gap-2">
+              <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
+                className="flex-1 p-2.5 rounded-xl bg-surface-2 border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
+              <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
+                disabled={!keyInput.trim()}
+                className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Button */}
         <button
           onClick={isConnected ? handleProcess : connect}
-          disabled={isConnected && (!amount || isProcessing)}
+          disabled={isConnected && (!amount || isProcessing || !tongoPrivateKey)}
           className={`w-full mt-3 py-4 rounded-2xl text-[17px] font-semibold transition-colors flex items-center justify-center gap-2 ${
             !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
+              : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : !amount ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : txComplete ? "bg-success/15 text-success"
               : "bg-primary hover:bg-primary-hover text-white"
@@ -126,10 +226,29 @@ export default function FundPage() {
           {isProcessing ? (<><Loader2 className="w-5 h-5 animate-spin" /> {mode === "fund" ? "Encrypting..." : "Decrypting..."}</>)
             : txComplete ? (mode === "fund" ? "Encrypted successfully" : "Decrypted successfully")
             : !isConnected ? "Connect Wallet"
+            : !tongoPrivateKey ? "Set Tongo key above"
             : !amount ? "Enter an amount"
             : mode === "fund" ? (<><Lock className="w-5 h-5" /> Encrypt &amp; Fund</>)
             : (<><Unlock className="w-5 h-5" /> Decrypt &amp; Withdraw</>)}
         </button>
+
+        {/* Error message */}
+        {error && (
+          <div className="mt-2 p-3 rounded-xl bg-danger/10 text-danger text-sm text-center">
+            {error}
+          </div>
+        )}
+
+        {/* Transaction link */}
+        {txHash && (
+          <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+            <span className="text-text-tertiary">Tx:</span>
+            <a href={getExplorerTxUrl(txHash)}
+              target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 font-mono text-xs">
+              {txHash.slice(0, 10)}...{txHash.slice(-6)} <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        )}
       </motion.div>
 
       {/* Token modal */}
@@ -144,12 +263,14 @@ export default function FundPage() {
                 <button onClick={() => setShowSelector(false)} className="p-1.5 rounded-xl hover:bg-surface-2 transition-colors"><X className="w-5 h-5 text-text-secondary" /></button>
               </div>
               <div className="space-y-1">
-                {tokens.map((token) => (
+                {TOKEN_LIST.map((token) => (
                   <button key={token.symbol} onClick={() => { setSelectedToken(token); setShowSelector(false); }}
                     className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-surface-2 transition-colors">
                     <TokenIcon symbol={token.symbol} size="lg" />
                     <div className="text-left flex-1"><div className="font-semibold">{token.symbol}</div><div className="text-sm text-text-secondary">{token.name}</div></div>
-                    <span className="text-sm text-text-tertiary font-mono">{token.balance}</span>
+                    <span className="text-sm text-text-tertiary font-mono">
+                      {balances[token.symbol] ? formatBalance(balances[token.symbol]!.balance, token.symbol) : "--"}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -160,31 +281,55 @@ export default function FundPage() {
 
       {/* Balances */}
       <div className="w-full max-w-[480px] mt-8">
-        <h2 className="text-sm font-semibold text-text-secondary mb-3 px-1">Confidential balances</h2>
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h2 className="text-sm font-semibold text-text-secondary">Confidential balances</h2>
+          {tongoPrivateKey && (
+            <button onClick={refreshAll} className="text-xs text-primary hover:underline flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          )}
+        </div>
         <div className="space-y-2">
-          {tokens.map((token) => (
-            <div key={token.symbol} className="flex items-center justify-between p-3.5 rounded-2xl bg-surface border border-border">
-              <div className="flex items-center gap-3">
-                <TokenIcon symbol={token.symbol} />
-                <div>
-                  <div className="text-sm font-semibold">{token.symbol}</div>
-                  <div className="text-xs text-text-tertiary">{token.name}</div>
+          {TOKEN_LIST.map((token) => {
+            const bal = balances[token.symbol];
+            const hasPending = bal && bal.pending > 0n;
+            return (
+              <div key={token.symbol} className="p-3.5 rounded-2xl bg-surface border border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <TokenIcon symbol={token.symbol} />
+                    <div>
+                      <div className="text-sm font-semibold">{token.symbol}</div>
+                      <div className="text-xs text-text-tertiary">{token.name}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="text-right">
+                      {revealedBalances[token.symbol] ? (
+                        <div>
+                          <span className="text-sm font-mono">{bal ? formatBalance(bal.balance, token.symbol) : "0"}</span>
+                          {hasPending && <div className="text-[11px] font-mono text-text-tertiary">+{formatBalance(bal.pending, token.symbol)} pending</div>}
+                        </div>
+                      ) : (
+                        <span className="text-sm font-mono text-text-tertiary">encrypted</span>
+                      )}
+                    </div>
+                    <button onClick={() => toggleReveal(token.symbol)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
+                      {revealedBalances[token.symbol] ? <EyeOff className="w-3.5 h-3.5 text-text-tertiary" /> : <Eye className="w-3.5 h-3.5 text-primary" />}
+                    </button>
+                  </div>
                 </div>
+                {/* Rollover button when there is a pending balance */}
+                {hasPending && revealedBalances[token.symbol] && (
+                  <button onClick={() => handleRollover(token.symbol)}
+                    disabled={isRollingOver === token.symbol}
+                    className="mt-2 w-full py-2 rounded-xl bg-primary-soft text-primary text-xs font-semibold hover:bg-primary/20 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50">
+                    {isRollingOver === token.symbol ? <><Loader2 className="w-3 h-3 animate-spin" /> Rolling over...</> : <><RefreshCw className="w-3 h-3" /> Rollover pending to balance</>}
+                  </button>
+                )}
               </div>
-              <div className="flex items-center gap-2.5">
-                <div className="text-right">
-                  {revealedBalances[token.symbol] ? (
-                    <span className="text-sm font-mono">{token.balance}</span>
-                  ) : (
-                    <span className="text-sm font-mono text-text-tertiary">encrypted</span>
-                  )}
-                </div>
-                <button onClick={() => toggleReveal(token.symbol)} className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors">
-                  {revealedBalances[token.symbol] ? <EyeOff className="w-3.5 h-3.5 text-text-tertiary" /> : <Eye className="w-3.5 h-3.5 text-primary" />}
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
