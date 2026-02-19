@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useWallet } from "@/context/WalletContext";
 import { Shield, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import ConnectButton from "@/components/wallet/ConnectButton";
+import ConnectModal from "@/components/wallet/ConnectModal";
 
 const navItems = [
   { href: "/fund", label: "Fund" },
@@ -16,7 +17,6 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { isConnected, isPending, connectors, connectWallet, disconnect, shortAddress, showWalletModal, setShowWalletModal } = useWallet();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -59,23 +59,8 @@ export default function Navbar() {
               Sepolia
             </div>
 
-            {isConnected ? (
-              <button
-                onClick={disconnect}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-hover text-sm font-medium transition-colors"
-              >
-                <div className="w-2 h-2 rounded-full bg-success" />
-                {shortAddress}
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowWalletModal(true)}
-                disabled={isPending}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary hover:bg-primary-hover text-white transition-colors disabled:opacity-50"
-              >
-                {isPending ? "Connecting..." : "Connect"}
-              </button>
-            )}
+            {/* Wallet connect button */}
+            <ConnectButton />
 
             {/* Mobile toggle */}
             <button
@@ -120,64 +105,8 @@ export default function Navbar() {
         )}
       </AnimatePresence>
 
-      {/* Wallet chooser modal */}
-      <AnimatePresence>
-        {showWalletModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowWalletModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-[360px] rounded-3xl bg-surface border border-border p-6"
-            >
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="text-lg font-semibold">Connect Wallet</h3>
-                <button
-                  onClick={() => setShowWalletModal(false)}
-                  className="p-1.5 rounded-xl hover:bg-surface-2 transition-colors"
-                >
-                  <X className="w-5 h-5 text-text-secondary" />
-                </button>
-              </div>
-              <div className="space-y-2">
-                {connectors.map((connector) => (
-                  <button
-                    key={connector.id}
-                    onClick={() => {
-                      connectWallet({ connector });
-                      setShowWalletModal(false);
-                    }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-surface-2 border border-border transition-colors"
-                  >
-                    {connector.icon ? (
-                      <img
-                        src={typeof connector.icon === "string" ? connector.icon : connector.icon.dark}
-                        alt={connector.name}
-                        className="w-10 h-10 rounded-xl"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-xl bg-primary-soft flex items-center justify-center text-lg font-bold text-primary">
-                        {connector.name.charAt(0)}
-                      </div>
-                    )}
-                    <div className="text-left">
-                      <div className="font-semibold">{connector.name}</div>
-                      <div className="text-sm text-text-secondary">Starknet wallet</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Wallet chooser modal (rendered as portal) */}
+      <ConnectModal />
     </nav>
   );
 }
