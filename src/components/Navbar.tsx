@@ -56,7 +56,7 @@ export default function Navbar() {
             {/* Network badge */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface text-text-secondary text-sm">
               <div className="w-2 h-2 rounded-full bg-success" />
-              Sepolia
+              Mainnet
             </div>
 
             {/* Wallet connect button */}
