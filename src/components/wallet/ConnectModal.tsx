@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Connector, useConnect } from "@starknet-react/core";
 import { X } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
@@ -9,15 +10,20 @@ export default function ConnectModal() {
   const { showWalletModal, setShowWalletModal } = useWallet();
   const { connectors, connect } = useConnect();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function handleConnectWallet(connector: Connector) {
     connect({ connector });
     setShowWalletModal(false);
   }
 
-  if (!showWalletModal) return null;
+  if (!showWalletModal || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -54,7 +60,8 @@ export default function ConnectModal() {
           By connecting, you agree to the Terms of Service
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
