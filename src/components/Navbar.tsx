@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Shield, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ConnectButton from "@/components/wallet/ConnectButton";
@@ -25,7 +26,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-[72px]">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5">
-            <Shield className="w-7 h-7 text-primary" />
+            <Image src="/logo.svg" alt="ShadowSwap" width={32} height={32} className="w-8 h-8" />
             <span className="text-[17px] font-semibold tracking-tight">
               ShadowSwap
             </span>
