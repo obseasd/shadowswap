@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { useAccount, useConnect, useDisconnect } from "@starknet-react/core";
-import { RpcProvider } from "starknet";
+import { hash as starkHash } from "starknet";
 import type { TokenSymbol } from "@/lib/constants";
 import { getNetwork, getToken } from "@/lib/constants";
 
@@ -96,42 +96,53 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnected, address, tongoPrivateKey]);
 
-  // Fetch ERC-20 wallet balances via raw callContract (balanceOf returns u256 = [low, high])
+  // Fetch ERC-20 wallet balances via direct JSON-RPC call
   const refreshErc20Balances = useCallback(async () => {
     if (!address) return;
-    try {
-      const network = getNetwork();
-      const provider = new RpcProvider({ nodeUrl: network.rpcUrl });
-      const tokens: TokenSymbol[] = ["ETH", "USDC", "STRK"];
-      const results = await Promise.all(
-        tokens.map(async (symbol) => {
-          try {
-            const token = getToken(symbol);
-            const res = await provider.callContract({
-              contractAddress: token.erc20,
-              entrypoint: "balanceOf",
-              calldata: [address],
-            });
-            // u256 result: [low, high]
-            const low = BigInt(res[0] || "0");
-            const high = BigInt(res[1] || "0");
+    const network = getNetwork();
+    const selector = starkHash.getSelectorFromName("balanceOf");
+    const tokens: TokenSymbol[] = ["ETH", "USDC", "STRK"];
+    const results = await Promise.all(
+      tokens.map(async (symbol) => {
+        try {
+          const token = getToken(symbol);
+          const resp = await fetch(network.rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "starknet_call",
+              params: [
+                {
+                  contract_address: token.erc20,
+                  entry_point_selector: selector,
+                  calldata: [address],
+                },
+                "latest",
+              ],
+            }),
+          });
+          const json = await resp.json();
+          if (json.result) {
+            const low = BigInt(json.result[0] || "0");
+            const high = BigInt(json.result[1] || "0");
             return { symbol, balance: low + high * (1n << 128n) };
-          } catch (e) {
-            console.error(`Failed to fetch ${symbol} balance:`, e);
-            return { symbol, balance: null };
           }
-        })
-      );
-      setErc20Balances((prev) => {
-        const next = { ...prev };
-        for (const r of results) {
-          next[r.symbol] = r.balance;
+          return { symbol, balance: null };
+        } catch (e) {
+          console.error(`Failed to fetch ${symbol} balance:`, e);
+          return { symbol, balance: null };
         }
-        return next;
-      });
-    } catch (err) {
-      console.error("Failed to fetch ERC-20 balances:", err);
-    }
+      })
+    );
+    setErc20Balances((prev) => {
+      const next = { ...prev };
+      for (const r of results) {
+        next[r.symbol] = r.balance;
+      }
+      return next;
+    });
   }, [address]);
 
   // Auto-fetch ERC-20 balances when wallet connects
