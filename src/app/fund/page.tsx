@@ -18,11 +18,13 @@ type Mode = "fund" | "withdraw";
 function formatTongoBalance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
   if (raw == null) return "0";
   const token = getToken(symbol);
-  const divisor = token.rate;
-  const whole = raw / divisor;
-  const remainder = raw % divisor;
+  // raw is in Tongo units (small integer). 1 Tongo unit = rate ERC-20 wei.
+  const erc20Wei = raw * token.rate;
+  const divisor = 10n ** BigInt(token.decimals);
+  const whole = erc20Wei / divisor;
+  const remainder = erc20Wei % divisor;
   const decimals = symbol === "USDC" ? 2 : 4;
-  const fracStr = remainder.toString().padStart(divisor.toString().length - 1, "0").slice(0, decimals);
+  const fracStr = remainder.toString().padStart(token.decimals, "0").slice(0, decimals);
   return `${whole.toLocaleString()}.${fracStr}`;
 }
 

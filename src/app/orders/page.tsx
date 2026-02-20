@@ -45,8 +45,11 @@ export default function OrdersPage() {
       const { buildTransferOp } = await import("@/lib/tongo");
       const commitToken = side === "BUY" ? "USDC" : "ETH";
       const commitAmount = side === "BUY" ? (parseFloat(price) * parseFloat(amount)).toString() : amount;
-      // Placeholder orderbook contract public key
-      const orderbookPublicKey = "0x0000000000000000000000000000000000000000000000000000000000000002";
+      // Orderbook public key (valid EC point on Stark curve)
+      const orderbookPublicKey = {
+        x: "627088272801405713560985229077786158610581355215145837257248988047835443922",
+        y: "962306405833205337611861169387935900858447421343428280515103558221889311122",
+      };
       const { calls } = await buildTransferOp(tongoPrivateKey, commitToken, orderbookPublicKey, commitAmount, address);
       const hash = await execute(calls);
       if (hash) {

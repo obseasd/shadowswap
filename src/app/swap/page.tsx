@@ -39,13 +39,21 @@ function getSwapRate(from: TokenSymbol, to: TokenSymbol): number {
 function formatBalance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
   if (raw == null) return "0";
   const token = getToken(symbol);
-  const divisor = token.rate;
-  const whole = raw / divisor;
-  const remainder = raw % divisor;
+  // raw is in Tongo units (small integer). 1 Tongo unit = rate ERC-20 wei.
+  const erc20Wei = raw * token.rate;
+  const divisor = 10n ** BigInt(token.decimals);
+  const whole = erc20Wei / divisor;
+  const remainder = erc20Wei % divisor;
   const decimals = symbol === "USDC" ? 2 : 4;
-  const fracStr = remainder.toString().padStart(divisor.toString().length - 1, "0").slice(0, decimals);
+  const fracStr = remainder.toString().padStart(token.decimals, "0").slice(0, decimals);
   return `${whole.toLocaleString()}.${fracStr}`;
 }
+
+// Demo pool public key (Stark curve secondary generator - a valid EC point)
+const POOL_PUBLIC_KEY = {
+  x: "627088272801405713560985229077786158610581355215145837257248988047835443922",
+  y: "962306405833205337611861169387935900858447421343428280515103558221889311122",
+};
 
 interface SwapTx {
   id: string;
@@ -104,9 +112,7 @@ export default function SwapPage() {
       // 1. Transfer tokenIn from user's encrypted balance (sends to a pool/burn address conceptually)
       // 2. The pool would transfer tokenOut back. For demo we just do the outgoing transfer.
       const { buildTransferOp } = await import("@/lib/tongo");
-      // Use a placeholder pool public key (in production this would be the AMM pool's Tongo public key)
-      const poolPublicKey = "0x0000000000000000000000000000000000000000000000000000000000000001";
-      const { calls } = await buildTransferOp(tongoPrivateKey, tokenIn.symbol, poolPublicKey, amountIn, address);
+      const { calls } = await buildTransferOp(tongoPrivateKey, tokenIn.symbol, POOL_PUBLIC_KEY, amountIn, address);
       const hash = await execute(calls);
       if (hash) {
         setTxHash(hash);
