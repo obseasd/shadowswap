@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { useAccount, useConnect, useDisconnect } from "@starknet-react/core";
-import { RpcProvider, Contract } from "starknet";
+import { RpcProvider } from "starknet";
 import type { TokenSymbol } from "@/lib/constants";
 import { getNetwork, getToken } from "@/lib/constants";
 
@@ -15,16 +15,6 @@ function generateTongoKey(): string {
     .join("");
   return "0x" + hex;
 }
-
-const ERC20_ABI = [
-  {
-    name: "balanceOf",
-    type: "function",
-    inputs: [{ name: "account", type: "felt" }],
-    outputs: [{ name: "balance", type: "Uint256" }],
-    stateMutability: "view",
-  },
-] as const;
 
 interface WalletContextType {
   address: string | null;
@@ -106,7 +96,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnected, address, tongoPrivateKey]);
 
-  // Fetch ERC-20 wallet balances from chain
+  // Fetch ERC-20 wallet balances via raw callContract (balanceOf returns u256 = [low, high])
   const refreshErc20Balances = useCallback(async () => {
     if (!address) return;
     try {
@@ -117,10 +107,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         tokens.map(async (symbol) => {
           try {
             const token = getToken(symbol);
-            const contract = new Contract({ abi: ERC20_ABI, address: token.erc20, providerOrAccount: provider });
-            const result = await contract.balanceOf(address);
-            return { symbol, balance: BigInt(result.toString()) };
-          } catch {
+            const res = await provider.callContract({
+              contractAddress: token.erc20,
+              entrypoint: "balanceOf",
+              calldata: [address],
+            });
+            // u256 result: [low, high]
+            const low = BigInt(res[0] || "0");
+            const high = BigInt(res[1] || "0");
+            return { symbol, balance: low + high * (1n << 128n) };
+          } catch (e) {
+            console.error(`Failed to fetch ${symbol} balance:`, e);
             return { symbol, balance: null };
           }
         })
