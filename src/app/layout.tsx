@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   title: "ShadowSwap — Confidential DeFi on Starknet",
   description:
     "Trade tokens without revealing your amounts. Privacy-preserving DEX powered by Tongo encryption on Starknet.",
-  icons: { icon: "/favicon.png" },
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({
