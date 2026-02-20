@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowDown, Lock, Settings, Loader2, ChevronDown, Eye, EyeOff, ExternalLink, X, Key } from "lucide-react";
+import { ArrowDown, Lock, Settings, Loader2, ChevronDown, Eye, EyeOff, ExternalLink, X } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import TokenIcon from "@/components/TokenIcon";
 import { type TokenSymbol, getToken, getExplorerTxUrl } from "@/lib/constants";
@@ -59,7 +59,7 @@ interface SwapTx {
 }
 
 export default function SwapPage() {
-  const { isConnected, connect, address, tongoPrivateKey, setTongoPrivateKey, execute, balances, refreshBalance } = useWallet();
+  const { isConnected, connect, address, tongoPrivateKey, execute, balances, refreshBalance } = useWallet();
   const [tokenIn, setTokenIn] = useState(TOKEN_LIST[0]);
   const [tokenOut, setTokenOut] = useState(TOKEN_LIST[1]);
   const [amountIn, setAmountIn] = useState("");
@@ -70,7 +70,6 @@ export default function SwapPage() {
   const [selectingFor, setSelectingFor] = useState<"in" | "out" | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [keyInput, setKeyInput] = useState("");
 
   const [history, setHistory] = useState<SwapTx[]>([]);
 
@@ -234,33 +233,12 @@ export default function SwapPage() {
           </div>
         )}
 
-        {/* Tongo key setup */}
-        {isConnected && !tongoPrivateKey && (
-          <div className="mt-3 p-4 rounded-2xl bg-surface border border-border">
-            <div className="flex items-center gap-2 mb-2">
-              <Key className="w-4 h-4 text-primary" />
-              <span className="text-sm font-semibold">Set Tongo Private Key</span>
-            </div>
-            <p className="text-xs text-text-tertiary mb-3">Enter your Tongo private key to enable encrypted swaps.</p>
-            <div className="flex gap-2">
-              <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
-                className="flex-1 p-2.5 rounded-xl bg-surface-2 border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
-              <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
-                disabled={!keyInput.trim()}
-                className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Button */}
         <button
           onClick={isConnected ? handleSwap : connect}
           disabled={isConnected && (!amountIn || isSwapping || !tongoPrivateKey)}
           className={`w-full mt-3 py-4 rounded-2xl text-[17px] font-semibold transition-colors flex items-center justify-center gap-2 ${
             !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
-              : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : !amountIn ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : swapComplete ? "bg-success/15 text-success"
               : "bg-primary hover:bg-primary-hover text-white"
@@ -269,7 +247,6 @@ export default function SwapPage() {
           {isSwapping ? (<><Loader2 className="w-5 h-5 animate-spin" /> Swapping...</>)
             : swapComplete ? "Swap successful"
             : !isConnected ? "Connect Wallet"
-            : !tongoPrivateKey ? "Set Tongo key above"
             : !amountIn ? "Enter an amount"
             : "Swap"}
         </button>

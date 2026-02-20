@@ -27,12 +27,11 @@ function deriveViewingKey(tongoPrivateKey: string): string {
 }
 
 export default function CompliancePage() {
-  const { isConnected, connect, tongoPrivateKey, setTongoPrivateKey } = useWallet();
+  const { isConnected, connect, tongoPrivateKey } = useWallet();
   const [auditorAddress, setAuditorAddress] = useState("");
   const [auditorLabel, setAuditorLabel] = useState("");
   const [isGranting, setIsGranting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [keyInput, setKeyInput] = useState("");
 
   const [auditors, setAuditors] = useState<Auditor[]>([]);
 
@@ -122,39 +121,17 @@ export default function CompliancePage() {
                 </div>
               </div>
 
-              {/* Tongo key setup */}
-              {isConnected && !tongoPrivateKey && (
-                <div className="mt-4 p-3 rounded-2xl bg-surface-2 border border-border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <KeyIcon className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-semibold">Set Tongo Private Key</span>
-                  </div>
-                  <p className="text-xs text-text-tertiary mb-2">Required to derive your viewing key.</p>
-                  <div className="flex gap-2">
-                    <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
-                      className="flex-1 p-2 rounded-xl bg-surface border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
-                    <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
-                      disabled={!keyInput.trim()}
-                      className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <button
                 onClick={isConnected ? handleGrant : connect}
                 disabled={isConnected && (!auditorAddress || isGranting || !tongoPrivateKey)}
                 className={`w-full mt-4 py-3.5 rounded-2xl text-[15px] font-semibold transition-colors flex items-center justify-center gap-2 ${
                   !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
-                    : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : !auditorAddress ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : "bg-primary hover:bg-primary-hover text-white"
                 } disabled:opacity-60`}
               >
                 {isGranting ? (<><Loader2 className="w-4 h-4 animate-spin" /> Encrypting key...</>)
                   : !isConnected ? "Connect Wallet"
-                  : !tongoPrivateKey ? "Set Tongo key above"
                   : !auditorAddress ? "Enter auditor address"
                   : (<><KeyIcon className="w-4 h-4" /> Grant access</>)}
               </button>

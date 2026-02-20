@@ -4,6 +4,16 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 import { useAccount, useConnect, useDisconnect } from "@starknet-react/core";
 import type { TokenSymbol } from "@/lib/constants";
 
+/** Generate a random Tongo private key (felt252 on Stark curve). */
+function generateTongoKey(): string {
+  const bytes = new Uint8Array(31); // 248 bits, safely within felt252 range
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return "0x" + hex;
+}
+
 interface WalletContextType {
   address: string | null;
   isConnected: boolean;
@@ -16,9 +26,8 @@ interface WalletContextType {
   isPending: boolean;
   showWalletModal: boolean;
   setShowWalletModal: (v: boolean) => void;
-  // Tongo key management
+  // Tongo key (auto-generated, transparent to user)
   tongoPrivateKey: string | null;
-  setTongoPrivateKey: (key: string) => void;
   // Execute transactions via connected wallet
   execute: (calls: unknown[]) => Promise<string | null>;
   // Balances
@@ -38,7 +47,6 @@ const WalletContext = createContext<WalletContextType>({
   showWalletModal: false,
   setShowWalletModal: () => {},
   tongoPrivateKey: null,
-  setTongoPrivateKey: () => {},
   execute: async () => null,
   balances: { ETH: null, USDC: null, STRK: null },
   refreshBalance: async () => {},
@@ -60,26 +68,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const address = rawAddress ?? null;
   const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 
-  const setTongoPrivateKey = useCallback((key: string) => {
-    setTongoPrivateKeyState(key);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("tongo_pk", key);
-    }
-  }, []);
-
-  // Restore tongo key from session on mount
+  // Auto-generate or restore Tongo private key when wallet connects.
+  // Each wallet address gets its own persistent key stored in localStorage.
   React.useEffect(() => {
-    if (isConnected && !tongoPrivateKey) {
-      const savedKey = sessionStorage.getItem("tongo_pk");
-      if (savedKey) setTongoPrivateKeyState(savedKey);
+    if (isConnected && address && !tongoPrivateKey) {
+      const storageKey = `tongo_pk_${address}`;
+      const savedKey = localStorage.getItem(storageKey);
+      if (savedKey) {
+        setTongoPrivateKeyState(savedKey);
+      } else {
+        const newKey = generateTongoKey();
+        localStorage.setItem(storageKey, newKey);
+        setTongoPrivateKeyState(newKey);
+      }
     }
-  }, [isConnected, tongoPrivateKey]);
+  }, [isConnected, address, tongoPrivateKey]);
 
   const disconnect = useCallback(() => {
     starknetDisconnect();
     setTongoPrivateKeyState(null);
     setBalances({ ETH: null, USDC: null, STRK: null });
-    sessionStorage.removeItem("tongo_pk");
   }, [starknetDisconnect]);
 
   const execute = useCallback(
@@ -128,7 +136,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         showWalletModal,
         setShowWalletModal,
         tongoPrivateKey,
-        setTongoPrivateKey,
         execute,
         balances,
         refreshBalance,

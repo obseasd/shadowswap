@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Eye, EyeOff, Loader2, X, ExternalLink, Key } from "lucide-react";
+import { Lock, Eye, EyeOff, Loader2, X, ExternalLink } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import TokenIcon from "@/components/TokenIcon";
 import { getExplorerTxUrl } from "@/lib/constants";
@@ -22,7 +22,7 @@ interface SealedOrder {
 }
 
 export default function OrdersPage() {
-  const { isConnected, connect, address, tongoPrivateKey, setTongoPrivateKey, execute, refreshBalance } = useWallet();
+  const { isConnected, connect, address, tongoPrivateKey, execute, refreshBalance } = useWallet();
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [price, setPrice] = useState("");
   const [amount, setAmount] = useState("");
@@ -30,7 +30,6 @@ export default function OrdersPage() {
   const [tab, setTab] = useState<"all" | "active" | "matched">("all");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [keyInput, setKeyInput] = useState("");
 
   const [orders, setOrders] = useState<SealedOrder[]>([]);
 
@@ -137,33 +136,12 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              {/* Tongo key setup */}
-              {isConnected && !tongoPrivateKey && (
-                <div className="mb-4 p-3 rounded-2xl bg-surface-2 border border-border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Key className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-semibold">Set Tongo Private Key</span>
-                  </div>
-                  <p className="text-xs text-text-tertiary mb-2">Required for placing sealed orders.</p>
-                  <div className="flex gap-2">
-                    <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
-                      className="flex-1 p-2 rounded-xl bg-surface border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
-                    <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
-                      disabled={!keyInput.trim()}
-                      className="px-3 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Submit */}
               <button
                 onClick={isConnected ? handlePlaceOrder : connect}
                 disabled={isConnected && (!price || !amount || isPlacing || !tongoPrivateKey)}
                 className={`w-full py-3.5 rounded-2xl text-[15px] font-semibold transition-colors flex items-center justify-center gap-2 ${
                   !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
-                    : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : !price || !amount ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
                     : side === "BUY" ? "bg-success hover:bg-success/90 text-white"
                     : "bg-danger hover:bg-danger/90 text-white"
@@ -171,7 +149,6 @@ export default function OrdersPage() {
               >
                 {isPlacing ? (<><Loader2 className="w-4 h-4 animate-spin" /> Placing...</>)
                   : !isConnected ? "Connect Wallet"
-                  : !tongoPrivateKey ? "Set Tongo key above"
                   : !price || !amount ? "Enter price & amount"
                   : (<><Lock className="w-4 h-4" /> Place sealed {side.toLowerCase()}</>)}
               </button>

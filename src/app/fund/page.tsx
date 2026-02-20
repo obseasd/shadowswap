@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Unlock, ArrowDown, Eye, EyeOff, Loader2, ChevronDown, X, ExternalLink, RefreshCw, Key } from "lucide-react";
+import { Lock, Unlock, ArrowDown, Eye, EyeOff, Loader2, ChevronDown, X, ExternalLink, RefreshCw } from "lucide-react";
 import { useWallet } from "@/context/WalletContext";
 import TokenIcon from "@/components/TokenIcon";
 import { type TokenSymbol, getToken, getExplorerTxUrl } from "@/lib/constants";
@@ -27,7 +27,7 @@ function formatBalance(raw: bigint | undefined | null, symbol: TokenSymbol): str
 }
 
 export default function FundPage() {
-  const { isConnected, connect, address, tongoPrivateKey, setTongoPrivateKey, execute, balances, refreshBalance } = useWallet();
+  const { isConnected, connect, address, tongoPrivateKey, execute, balances, refreshBalance } = useWallet();
   const [mode, setMode] = useState<Mode>("fund");
   const [selectedToken, setSelectedToken] = useState(TOKEN_LIST[0]);
   const [amount, setAmount] = useState("");
@@ -38,7 +38,6 @@ export default function FundPage() {
   const [txComplete, setTxComplete] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [keyInput, setKeyInput] = useState("");
   const [isRollingOver, setIsRollingOver] = useState<TokenSymbol | null>(null);
 
   // Refresh balances when tongo key is set
@@ -191,33 +190,12 @@ export default function FundPage() {
           </div>
         </div>
 
-        {/* Tongo key setup */}
-        {isConnected && !tongoPrivateKey && (
-          <div className="mt-3 p-4 rounded-2xl bg-surface border border-border">
-            <div className="flex items-center gap-2 mb-2">
-              <Key className="w-4 h-4 text-primary" />
-              <span className="text-sm font-semibold">Set Tongo Private Key</span>
-            </div>
-            <p className="text-xs text-text-tertiary mb-3">Enter your Tongo private key to enable encrypted operations. This is separate from your Starknet wallet key.</p>
-            <div className="flex gap-2">
-              <input type="password" placeholder="0x..." value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
-                className="flex-1 p-2.5 rounded-xl bg-surface-2 border border-border text-sm font-mono focus:outline-none focus:border-border-hover transition-colors" />
-              <button onClick={() => { if (keyInput.trim()) { setTongoPrivateKey(keyInput.trim()); setKeyInput(""); } }}
-                disabled={!keyInput.trim()}
-                className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-40">
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Button */}
         <button
           onClick={isConnected ? handleProcess : connect}
           disabled={isConnected && (!amount || isProcessing || !tongoPrivateKey)}
           className={`w-full mt-3 py-4 rounded-2xl text-[17px] font-semibold transition-colors flex items-center justify-center gap-2 ${
             !isConnected ? "bg-primary-soft text-primary hover:bg-primary/20"
-              : !tongoPrivateKey ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : !amount ? "bg-surface-2 text-text-tertiary cursor-not-allowed"
               : txComplete ? "bg-success/15 text-success"
               : "bg-primary hover:bg-primary-hover text-white"
@@ -226,7 +204,6 @@ export default function FundPage() {
           {isProcessing ? (<><Loader2 className="w-5 h-5 animate-spin" /> {mode === "fund" ? "Encrypting..." : "Decrypting..."}</>)
             : txComplete ? (mode === "fund" ? "Encrypted successfully" : "Decrypted successfully")
             : !isConnected ? "Connect Wallet"
-            : !tongoPrivateKey ? "Set Tongo key above"
             : !amount ? "Enter an amount"
             : mode === "fund" ? (<><Lock className="w-5 h-5" /> Encrypt &amp; Fund</>)
             : (<><Unlock className="w-5 h-5" /> Decrypt &amp; Withdraw</>)}
