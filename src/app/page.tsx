@@ -168,7 +168,7 @@ export default function Home() {
 
       <section className="relative max-w-[1200px] mx-auto px-4 sm:px-6 pb-24">
         <div className="rounded-3xl bg-surface border border-border p-10 sm:p-16 text-center">
-          <Image src="/logo.svg" alt="ShadowSwap" width={40} height={40} className="w-10 h-10 mx-auto mb-6" />
+          <Image src="/logo.png" alt="ShadowSwap" width={40} height={40} className="w-10 h-10 mx-auto mb-6" />
           <h2 className="text-2xl sm:text-3xl font-bold mb-3">Ready to trade privately?</h2>
           <p className="text-text-secondary mb-8 max-w-md mx-auto">
             Connect your wallet and start making confidential swaps on Starknet.
@@ -188,7 +188,7 @@ export default function Home() {
       <footer className="border-t border-border py-8">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-text-tertiary text-sm">
-            <Image src="/logo.svg" alt="" width={16} height={16} className="w-4 h-4" /> ShadowSwap
+            <Image src="/logo.png" alt="" width={16} height={16} className="w-4 h-4" /> ShadowSwap
           </div>
           <div className="flex items-center gap-6 text-sm text-text-tertiary">
             <a href="https://docs.tongo.cash" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Tongo Docs</a>
