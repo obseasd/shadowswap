@@ -2,7 +2,9 @@
 
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { useAccount, useConnect, useDisconnect } from "@starknet-react/core";
+import { RpcProvider, Contract } from "starknet";
 import type { TokenSymbol } from "@/lib/constants";
+import { getNetwork, getToken } from "@/lib/constants";
 
 /** Generate a random Tongo private key (felt252 on Stark curve). */
 function generateTongoKey(): string {
@@ -13,6 +15,16 @@ function generateTongoKey(): string {
     .join("");
   return "0x" + hex;
 }
+
+const ERC20_ABI = [
+  {
+    name: "balanceOf",
+    type: "function",
+    inputs: [{ name: "account", type: "felt" }],
+    outputs: [{ name: "balance", type: "Uint256" }],
+    stateMutability: "view",
+  },
+] as const;
 
 interface WalletContextType {
   address: string | null;
@@ -30,9 +42,12 @@ interface WalletContextType {
   tongoPrivateKey: string | null;
   // Execute transactions via connected wallet
   execute: (calls: unknown[]) => Promise<string | null>;
-  // Balances
+  // Tongo encrypted balances
   balances: Record<TokenSymbol, { balance: bigint; pending: bigint } | null>;
   refreshBalance: (token: TokenSymbol) => Promise<void>;
+  // ERC-20 wallet balances
+  erc20Balances: Record<TokenSymbol, bigint | null>;
+  refreshErc20Balances: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -50,6 +65,8 @@ const WalletContext = createContext<WalletContextType>({
   execute: async () => null,
   balances: { ETH: null, USDC: null, STRK: null },
   refreshBalance: async () => {},
+  erc20Balances: { ETH: null, USDC: null, STRK: null },
+  refreshErc20Balances: async () => {},
 });
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -60,6 +77,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [tongoPrivateKey, setTongoPrivateKeyState] = useState<string | null>(null);
   const [balances, setBalances] = useState<Record<TokenSymbol, { balance: bigint; pending: bigint } | null>>({
+    ETH: null,
+    USDC: null,
+    STRK: null,
+  });
+  const [erc20Balances, setErc20Balances] = useState<Record<TokenSymbol, bigint | null>>({
     ETH: null,
     USDC: null,
     STRK: null,
@@ -84,10 +106,49 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnected, address, tongoPrivateKey]);
 
+  // Fetch ERC-20 wallet balances from chain
+  const refreshErc20Balances = useCallback(async () => {
+    if (!address) return;
+    try {
+      const network = getNetwork();
+      const provider = new RpcProvider({ nodeUrl: network.rpcUrl });
+      const tokens: TokenSymbol[] = ["ETH", "USDC", "STRK"];
+      const results = await Promise.all(
+        tokens.map(async (symbol) => {
+          try {
+            const token = getToken(symbol);
+            const contract = new Contract({ abi: ERC20_ABI, address: token.erc20, providerOrAccount: provider });
+            const result = await contract.balanceOf(address);
+            return { symbol, balance: BigInt(result.toString()) };
+          } catch {
+            return { symbol, balance: null };
+          }
+        })
+      );
+      setErc20Balances((prev) => {
+        const next = { ...prev };
+        for (const r of results) {
+          next[r.symbol] = r.balance;
+        }
+        return next;
+      });
+    } catch (err) {
+      console.error("Failed to fetch ERC-20 balances:", err);
+    }
+  }, [address]);
+
+  // Auto-fetch ERC-20 balances when wallet connects
+  React.useEffect(() => {
+    if (isConnected && address) {
+      refreshErc20Balances();
+    }
+  }, [isConnected, address, refreshErc20Balances]);
+
   const disconnect = useCallback(() => {
     starknetDisconnect();
     setTongoPrivateKeyState(null);
     setBalances({ ETH: null, USDC: null, STRK: null });
+    setErc20Balances({ ETH: null, USDC: null, STRK: null });
   }, [starknetDisconnect]);
 
   const execute = useCallback(
@@ -139,6 +200,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         execute,
         balances,
         refreshBalance,
+        erc20Balances,
+        refreshErc20Balances,
       }}
     >
       {children}

@@ -15,7 +15,7 @@ const TOKEN_LIST: { symbol: TokenSymbol; name: string }[] = [
 
 type Mode = "fund" | "withdraw";
 
-function formatBalance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
+function formatTongoBalance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
   if (raw == null) return "0";
   const token = getToken(symbol);
   const divisor = token.rate;
@@ -26,8 +26,19 @@ function formatBalance(raw: bigint | undefined | null, symbol: TokenSymbol): str
   return `${whole.toLocaleString()}.${fracStr}`;
 }
 
+function formatErc20Balance(raw: bigint | undefined | null, symbol: TokenSymbol): string {
+  if (raw == null) return "--";
+  const token = getToken(symbol);
+  const divisor = 10n ** BigInt(token.decimals);
+  const whole = raw / divisor;
+  const remainder = raw % divisor;
+  const decimals = symbol === "USDC" ? 2 : 4;
+  const fracStr = remainder.toString().padStart(token.decimals, "0").slice(0, decimals);
+  return `${whole.toLocaleString()}.${fracStr}`;
+}
+
 export default function FundPage() {
-  const { isConnected, connect, address, tongoPrivateKey, execute, balances, refreshBalance } = useWallet();
+  const { isConnected, connect, address, tongoPrivateKey, execute, balances, refreshBalance, erc20Balances, refreshErc20Balances } = useWallet();
   const [mode, setMode] = useState<Mode>("fund");
   const [selectedToken, setSelectedToken] = useState(TOKEN_LIST[0]);
   const [amount, setAmount] = useState("");
@@ -89,6 +100,7 @@ export default function FundPage() {
           setTxComplete(true);
           setShowEncrypted(true);
           await refreshBalance(selectedToken.symbol);
+          await refreshErc20Balances();
         } else {
           setError("Fund transaction was rejected or failed.");
         }
@@ -100,6 +112,7 @@ export default function FundPage() {
           setTxHash(hash);
           setTxComplete(true);
           await refreshBalance(selectedToken.symbol);
+          await refreshErc20Balances();
         } else {
           setError("Withdraw transaction was rejected or failed.");
         }
@@ -142,8 +155,8 @@ export default function FundPage() {
               <span>{mode === "fund" ? "You deposit" : "You decrypt"}</span>
               <span className="text-xs">
                 {mode === "fund"
-                  ? `Balance: ${balances[selectedToken.symbol] ? formatBalance(balances[selectedToken.symbol]!.balance, selectedToken.symbol) : "--"} ${selectedToken.symbol}`
-                  : `Encrypted: ${balances[selectedToken.symbol] ? formatBalance(balances[selectedToken.symbol]!.balance, selectedToken.symbol) : "--"} ${selectedToken.symbol}`}
+                  ? `Wallet: ${formatErc20Balance(erc20Balances[selectedToken.symbol], selectedToken.symbol)} ${selectedToken.symbol}`
+                  : `Encrypted: ${balances[selectedToken.symbol] ? formatTongoBalance(balances[selectedToken.symbol]!.balance, selectedToken.symbol) : "--"} ${selectedToken.symbol}`}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -245,9 +258,10 @@ export default function FundPage() {
                     className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-surface-2 transition-colors">
                     <TokenIcon symbol={token.symbol} size="lg" />
                     <div className="text-left flex-1"><div className="font-semibold">{token.symbol}</div><div className="text-sm text-text-secondary">{token.name}</div></div>
-                    <span className="text-sm text-text-tertiary font-mono">
-                      {balances[token.symbol] ? formatBalance(balances[token.symbol]!.balance, token.symbol) : "--"}
-                    </span>
+                    <div className="text-right">
+                      <div className="text-sm text-text-tertiary font-mono">{formatErc20Balance(erc20Balances[token.symbol], token.symbol)}</div>
+                      <div className="text-[11px] text-text-tertiary font-mono">wallet</div>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -284,8 +298,8 @@ export default function FundPage() {
                     <div className="text-right">
                       {revealedBalances[token.symbol] ? (
                         <div>
-                          <span className="text-sm font-mono">{bal ? formatBalance(bal.balance, token.symbol) : "0"}</span>
-                          {hasPending && <div className="text-[11px] font-mono text-text-tertiary">+{formatBalance(bal.pending, token.symbol)} pending</div>}
+                          <span className="text-sm font-mono">{bal ? formatTongoBalance(bal.balance, token.symbol) : "0"}</span>
+                          {hasPending && <div className="text-[11px] font-mono text-text-tertiary">+{formatTongoBalance(bal.pending, token.symbol)} pending</div>}
                         </div>
                       ) : (
                         <span className="text-sm font-mono text-text-tertiary">encrypted</span>
